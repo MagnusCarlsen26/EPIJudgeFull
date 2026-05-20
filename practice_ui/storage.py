@@ -13,7 +13,9 @@ DEFAULT_STATE: dict[str, Any] = {
         "lastProblemId": None,
         "filters": {"chapter": None, "status": "all", "query": ""},
         "sort": "book_order",
-        "theme": "light",
+        "theme": "system",
+        "sidebarCollapsed": False,
+        "expandedChapterIds": [],
     },
     "problems": {},
 }
@@ -55,12 +57,24 @@ class StateStore:
         state["session"]["lastProblemId"] = problem_id
         self.write(state)
 
+    def get_attempt(self, problem_id: str, attempt_id: str) -> dict[str, Any] | None:
+        problem_state = self.read().get("problems", {}).get(problem_id, {})
+        for attempt in problem_state.get("attempts", []):
+            if attempt.get("id") == attempt_id:
+                return attempt
+        return None
+
 
 def merge_defaults(state: dict[str, Any]) -> dict[str, Any]:
     merged = deepcopy(DEFAULT_STATE)
     merged.update({k: v for k, v in state.items() if k not in {"session", "problems"}})
     merged["session"].update(state.get("session", {}))
     merged["session"]["filters"].update(state.get("session", {}).get("filters", {}))
+    if merged["session"].get("theme") not in {"light", "dark", "system"}:
+        merged["session"]["theme"] = DEFAULT_STATE["session"]["theme"]
+    if not isinstance(merged["session"].get("sidebarCollapsed"), bool):
+        merged["session"]["sidebarCollapsed"] = DEFAULT_STATE["session"]["sidebarCollapsed"]
+    if not isinstance(merged["session"].get("expandedChapterIds"), list):
+        merged["session"]["expandedChapterIds"] = DEFAULT_STATE["session"]["expandedChapterIds"]
     merged["problems"] = state.get("problems", {})
     return merged
-
