@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EPI Python Practice</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell" id="appShell">
+      <button id="sidebarReopen" class="sidebar-reopen icon-button" title="Open problems" aria-label="Open problems">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/><path d="M4 4h16v16H4z"/></svg>
+      </button>
+      <aside class="sidebar" id="sidebar">
+        <div class="brand">
+          <div>
+            <div class="brand-title">
+              <h1>EPI Python</h1>
+              <button id="themeButton" class="icon-button" title="System theme" aria-label="System theme"></button>
+            </div>
+            <p id="progressSummary">Loading problems...</p>
+          </div>
+          <button id="sidebarToggle" class="icon-button" title="Collapse problems" aria-label="Collapse problems">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/><path d="M4 4h16v16H4z"/></svg>
+          </button>
+        </div>
+        <div class="filters">
+          <input id="searchInput" type="search" placeholder="Search title or file" autocomplete="off" />
+          <div class="status-tabs" id="statusTabs">
+            <button data-status="all" class="active" title="All" aria-label="All"></button>
+            <button data-status="starred" title="Starred" aria-label="Starred"></button>
+            <button data-status="in_progress" title="In Progress" aria-label="In Progress"></button>
+            <button data-status="solved" title="Solved" aria-label="Solved"></button>
+          </div>
+        </div>
+        <div class="problem-list" id="problemList"></div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <button id="mobileProblems" class="mobile-only">Problems</button>
+          <div>
+            <div class="chapter-label" id="problemChapter">Select a problem</div>
+            <div class="problem-title-row">
+              <h2 id="problemTitle">Python practice workspace</h2>
+              <button id="starButton" class="icon-button" title="Star problem" aria-label="Star problem"></button>
+            </div>
+          </div>
+          <div class="top-actions">
+            <span id="dirtyState" class="dirty-state"></span>
+            <span id="progressBadge" class="badge">0 / 0</span>
+            <button id="resetViewButton">Reset code</button>
+            <button id="runSampleButton">Run Samples</button>
+            <button id="runButton" class="primary icon-button" title="Run All Tests" aria-label="Run All Tests"></button>
+          </div>
+        </header>
+        <section class="editor-wrap">
+          <div id="editor"></div>
+          <textarea id="fallbackEditor" spellcheck="false"></textarea>
+        </section>
+      </main>
+
+      <aside class="right-panel">
+        <div class="tabs" id="rightTabs">
+          <button data-tab="output" class="active">Output</button>
+          <button data-tab="notes">Notes</button>
+          <button data-tab="history">History</button>
+        </div>
+        <section class="tab-panel active" id="tab-output">
+          <div id="runSummary" class="run-summary muted">No run yet.</div>
+          <h3>stdout</h3>
+          <pre id="stdoutBlock"></pre>
+          <h3 id="stderrTitle">stderr</h3>
+          <pre id="stderrBlock"></pre>
+        </section>
+        <section class="tab-panel" id="tab-notes">
+          <textarea id="notesArea" placeholder="Approach, edge cases, complexity, mistakes to revisit..."></textarea>
+          <div class="panel-actions">
+            <button id="saveNotesButton">Save Notes</button>
+          </div>
+        </section>
+        <section class="tab-panel" id="tab-history">
+          <div id="historyList" class="history-list"></div>
+          <div id="historyCode" class="history-code" hidden>
+            <div id="historyCodeHeader" class="history-code-header"></div>
+            <pre id="historyCodeBlock"></pre>
+          </div>
+        </section>
+      </aside>
+    </div>
+    <div id="toast" class="toast"></div>
+    <script src="/config.js"></script>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
