@@ -177,11 +177,11 @@ svg .fill {
   gap: 6px;
 }
 
-.status-tabs button, .tabs button, .theme-toggle button {
+.status-tabs button, .tabs button {
   font-size: 12px;
 }
 
-.status-tabs button, .theme-toggle button, .icon-button {
+.status-tabs button, .icon-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -191,6 +191,22 @@ svg .fill {
   background: var(--active-bg);
   border-color: var(--accent);
   color: var(--active-ink);
+}
+
+.status-tabs button[data-status="starred"] {
+  color: var(--warn);
+}
+
+.status-tabs button[data-status="in_progress"] {
+  color: var(--warn);
+}
+
+.status-tabs button[data-status="solved"] {
+  color: var(--accent);
+}
+
+.status-tabs button[data-status="all"] {
+  color: var(--muted);
 }
 
 .problem-list {
@@ -239,6 +255,21 @@ svg .fill {
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.chapter-progress {
+  height: 4px;
+  margin: -3px 8px 8px 34px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--line);
+}
+
+.chapter-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
 }
 
 .problem-item {
@@ -322,6 +353,20 @@ svg .fill {
   line-height: 1.2;
 }
 
+.brand-title, .problem-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.problem-title-row h2 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .file-line {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
@@ -340,31 +385,13 @@ svg .fill {
   padding: 0;
 }
 
-.theme-toggle {
-  display: inline-grid;
-  grid-template-columns: repeat(3, 34px);
-  gap: 4px;
-  padding: 3px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--panel-strong);
-}
-
-.theme-toggle button {
-  width: 28px;
-  min-height: 28px;
-  padding: 0;
-  border-color: transparent;
-  background: transparent;
-}
-
-.theme-toggle button.active {
-  background: var(--active-bg);
-  color: var(--active-ink);
-}
-
 .icon-button.active {
   color: var(--warn);
+}
+
+#runButton svg {
+  width: 16px;
+  height: 16px;
 }
 
 .sidebar-reopen {
@@ -394,10 +421,47 @@ svg .fill {
 }
 
 .dirty-state {
-  min-width: 54px;
-  color: var(--warn);
+  min-width: 10px;
+  color: var(--muted);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 650;
+  text-align: right;
+}
+
+.dirty-state::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--line);
+  vertical-align: 1px;
+}
+
+.dirty-state:empty::before {
+  margin-right: 0;
+}
+
+.dirty-state[data-state="saving"] {
+  color: var(--muted);
+}
+
+.dirty-state[data-state="saved"] {
+  width: 10px;
+  overflow: hidden;
+}
+
+.dirty-state[data-state="saved"]::before {
+  background: var(--accent);
+}
+
+.dirty-state[data-state="failed"] {
+  color: var(--danger);
+}
+
+.dirty-state[data-state="failed"]::before {
+  background: var(--danger);
 }
 
 .editor-wrap {

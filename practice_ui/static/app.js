@@ -49,6 +49,12 @@ const state = {
   editor: null,
   editorKind: "textarea",
   lastRun: null,
+  autosaveTimer: null,
+  autosaveDelayMs: 900,
+  saveInFlight: false,
+  pendingAutosave: false,
+  suppressAutosave: false,
+  resetVersion: 0,
 };
 
 const el = {};
@@ -64,6 +70,8 @@ const icons = {
   moon: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5 9 9 0 1 0 20.5 14.5z"/></svg>`,
   monitor: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8"/><path d="M12 16v4"/></svg>`,
   chevron: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>`,
+  run: `<svg viewBox="0 0 24 24" aria-hidden="true"><path class="fill" d="M8 5v14l11-7z"/></svg>`,
+  running: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/></svg>`,
 };
 
 document.addEventListener("DOMContentLoaded", init);
@@ -80,10 +88,10 @@ async function init() {
 function bindElements() {
   for (const id of [
     "appShell", "progressSummary", "searchInput", "statusTabs", "problemList",
-    "problemChapter", "problemTitle", "problemPath", "starButton", "dirtyState", "progressBadge",
-    "resetViewButton", "saveButton", "runButton", "editor", "fallbackEditor", "rightTabs", "runSummary",
+    "problemChapter", "problemTitle", "starButton", "dirtyState", "progressBadge",
+    "resetViewButton", "runButton", "editor", "fallbackEditor", "rightTabs", "runSummary",
     "stdoutBlock", "stderrBlock", "stderrTitle", "notesArea", "saveNotesButton", "historyList",
-    "infoList", "toast", "sidebar", "mobileProblems", "themeToggle", "sidebarToggle", "sidebarReopen",
+    "infoList", "toast", "sidebar", "mobileProblems", "themeButton", "sidebarToggle", "sidebarReopen",
   ]) {
     el[id] = document.getElementById(id);
   }
@@ -100,7 +108,6 @@ function bindEvents() {
     const button = event.target.closest("button[data-tab]");
     if (button) setTab(button.dataset.tab);
   });
-  el.saveButton.addEventListener("click", saveCode);
   el.runButton.addEventListener("click", runTests);
   el.resetViewButton.addEventListener("click", resetEditorView);
   el.starButton.addEventListener("click", toggleStar);
@@ -111,10 +118,7 @@ function bindEvents() {
   });
   el.sidebarToggle.addEventListener("click", () => setSidebarCollapsed(!state.session.sidebarCollapsed));
   el.sidebarReopen.addEventListener("click", () => setSidebarCollapsed(false));
-  el.themeToggle.addEventListener("click", (event) => {
-    const button = event.target.closest("button[data-theme]");
-    if (button) setTheme(button.dataset.theme);
-  });
+  el.themeButton.addEventListener("click", cycleTheme);
   systemTheme.addEventListener("change", () => {
     if (state.session.theme === "system") applyTheme("system");
   });
@@ -123,7 +127,7 @@ function bindEvents() {
     if (!mod || !state.current) return;
     if (event.key.toLowerCase() === "s") {
       event.preventDefault();
-      saveCode();
+      runAutosave();
     }
     if (event.key === "Enter") {
       event.preventDefault();
@@ -241,6 +245,9 @@ function renderChapter(chapter) {
         <span class="chapter-title">${escapeHtml(chapter.title)}</span>
         <span>${solved}/${chapter.problems.length}</span>
       </button>
+      <div class="chapter-progress" aria-hidden="true">
+        <span style="width: ${chapterProgress(chapter)}%"></span>
+      </div>
       <div class="chapter-problems${expanded ? " expanded" : ""}">
         ${expanded ? chapter.problems.map(renderProblemButton).join("") : ""}
       </div>
@@ -285,7 +292,6 @@ function renderCurrentProblem() {
   const problem = state.current;
   el.problemChapter.textContent = problem.chapter;
   el.problemTitle.textContent = problem.title;
-  el.problemPath.textContent = problem.path;
   el.progressBadge.textContent = `${problem.passed} / ${problem.total}`;
   renderStarButton(problem.bookmarked);
   el.notesArea.value = problem.notes || "";
@@ -317,24 +323,11 @@ function renderInfo(problem) {
   el.infoList.innerHTML = rows.map(([key, value]) => `<dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd>`).join("");
 }
 
-async function saveCode() {
-  if (!state.current) return;
-  try {
-    const code = getEditorValue();
-    await api.put(`/api/problems/${encodeURIComponent(state.current.id)}/code`, { code });
-    state.savedCode = code;
-    updateDirtyState();
-    showToast("Saved.");
-  } catch (error) {
-    showToast(error.message);
-  }
-}
-
 async function runTests() {
   if (!state.current || state.running) return;
   state.running = true;
   el.runButton.disabled = true;
-  el.runButton.textContent = "Running...";
+  el.runButton.innerHTML = icons.running;
   setTab("output");
   try {
     const code = getEditorValue();
@@ -348,7 +341,7 @@ async function runTests() {
   } finally {
     state.running = false;
     el.runButton.disabled = false;
-    el.runButton.textContent = "Run Tests";
+    el.runButton.innerHTML = icons.run;
     updateDirtyState();
   }
 }
@@ -437,10 +430,7 @@ function renderStaticIcons() {
   el.statusTabs.querySelectorAll("button[data-status]").forEach((button) => {
     button.innerHTML = statusIcons[button.dataset.status] || "";
   });
-  const themeIcons = { light: icons.sun, dark: icons.moon, system: icons.monitor };
-  el.themeToggle.querySelectorAll("button[data-theme]").forEach((button) => {
-    button.innerHTML = themeIcons[button.dataset.theme] || "";
-  });
+  el.runButton.innerHTML = icons.run;
   renderStarButton(false);
 }
 
@@ -480,11 +470,19 @@ function setTheme(theme) {
   persistSession();
 }
 
+function cycleTheme() {
+  const order = ["system", "light", "dark"];
+  const current = order.includes(state.session.theme) ? state.session.theme : "system";
+  setTheme(order[(order.indexOf(current) + 1) % order.length]);
+}
+
 function updateThemeButtons() {
-  if (!el.themeToggle) return;
-  el.themeToggle.querySelectorAll("button[data-theme]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.theme === state.session.theme);
-  });
+  if (!el.themeButton) return;
+  const themeIcons = { light: icons.sun, dark: icons.moon, system: icons.monitor };
+  const themeLabels = { light: "Light theme", dark: "Dark theme", system: "System theme" };
+  el.themeButton.innerHTML = themeIcons[state.session.theme] || icons.monitor;
+  el.themeButton.title = themeLabels[state.session.theme] || themeLabels.system;
+  el.themeButton.setAttribute("aria-label", el.themeButton.title);
 }
 
 function applySidebarState() {
@@ -552,6 +550,12 @@ function renderStarButton(bookmarked) {
   el.starButton.setAttribute("aria-label", el.starButton.title);
 }
 
+function chapterProgress(chapter) {
+  if (!chapter.problems.length) return 0;
+  const solved = chapter.problems.filter((problem) => problem.status === "solved").length;
+  return Math.round((solved / chapter.problems.length) * 100);
+}
+
 function persistSession() {
   api.put("/api/session", { session: state.session }).catch((error) => showToast(error.message));
 }
@@ -562,7 +566,26 @@ function setTab(tab) {
   document.getElementById(`tab-${tab}`).classList.add("active");
 }
 
-function resetEditorView() {
+async function resetEditorView() {
+  if (!state.current) return;
+  if (!confirm("Restore the original starter code for this problem?")) return;
+  clearPendingAutosave();
+  state.pendingAutosave = false;
+  state.resetVersion += 1;
+  const resetVersion = state.resetVersion;
+  try {
+    const result = await api.post(`/api/problems/${encodeURIComponent(state.current.id)}/reset`, {});
+    if (resetVersion !== state.resetVersion) return;
+    state.savedCode = result.code;
+    setEditorValue(result.code);
+    updateDirtyState("Restored");
+    resetEditorPosition();
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+function resetEditorPosition() {
   if (state.editorKind === "monaco") {
     state.editor.setPosition({ lineNumber: 1, column: 1 });
     state.editor.revealLine(1);
@@ -578,15 +601,74 @@ function getEditorValue() {
 }
 
 function setEditorValue(value) {
-  if (state.editor) state.editor.setValue(value);
+  if (!state.editor) return;
+  state.suppressAutosave = true;
+  state.editor.setValue(value);
+  window.setTimeout(() => { state.suppressAutosave = false; }, 0);
 }
 
 function isDirty() {
   return state.current && getEditorValue() !== state.savedCode;
 }
 
-function updateDirtyState() {
-  el.dirtyState.textContent = isDirty() ? "Unsaved" : "";
+function updateDirtyState(message) {
+  if (typeof message === "string" && message) {
+    el.dirtyState.textContent = message;
+    el.dirtyState.dataset.state = message.toLowerCase().replaceAll(" ", "-");
+    return;
+  }
+  el.dirtyState.textContent = isDirty() ? "Saving..." : "";
+  el.dirtyState.dataset.state = isDirty() ? "saving" : "saved";
+  if (!state.suppressAutosave) scheduleAutosave();
+}
+
+function scheduleAutosave() {
+  if (!state.current || !isDirty()) return;
+  clearTimeout(state.autosaveTimer);
+  state.autosaveTimer = setTimeout(runAutosave, state.autosaveDelayMs);
+}
+
+function clearPendingAutosave() {
+  clearTimeout(state.autosaveTimer);
+  state.autosaveTimer = null;
+}
+
+async function runAutosave() {
+  if (!state.current || !isDirty()) {
+    updateDirtyState();
+    return;
+  }
+  if (state.saveInFlight) {
+    state.pendingAutosave = true;
+    return;
+  }
+  const resetVersion = state.resetVersion;
+  try {
+    await persistCode(getEditorValue(), resetVersion);
+  } catch (error) {
+    if (resetVersion !== state.resetVersion) return;
+    el.dirtyState.textContent = "Autosave failed";
+    el.dirtyState.dataset.state = "failed";
+  }
+  if (resetVersion !== state.resetVersion) return;
+  if (state.pendingAutosave) {
+    state.pendingAutosave = false;
+    scheduleAutosave();
+  }
+}
+
+async function persistCode(code, resetVersion = state.resetVersion) {
+  state.saveInFlight = true;
+  el.dirtyState.textContent = "Saving...";
+  el.dirtyState.dataset.state = "saving";
+  try {
+    await api.put(`/api/problems/${encodeURIComponent(state.current.id)}/code`, { code });
+    if (resetVersion !== state.resetVersion) return;
+    state.savedCode = code;
+    updateDirtyState("Saved");
+  } finally {
+    state.saveInFlight = false;
+  }
 }
 
 function findProblem(problemId) {

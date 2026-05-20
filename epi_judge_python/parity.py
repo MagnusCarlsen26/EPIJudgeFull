@@ -1,7 +1,7 @@
 from test_framework import generic_test
 
-
-def parity(x: int) -> int:
+hgjh
+def parity(x: int) -> int:dfv
     # TODO - you fill in here.
     return 0
 

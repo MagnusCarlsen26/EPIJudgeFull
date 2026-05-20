@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,7 @@ from .storage import StateStore
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+USER_CODE_DIR = REPO_ROOT / ".practice_ui" / "code"
 
 app = FastAPI(title="EPI Python Practice UI")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -46,7 +48,8 @@ async def list_problems() -> dict[str, Any]:
 @app.get("/api/problems/{problem_id}")
 async def get_problem(problem_id: str) -> dict[str, Any]:
     problem = require_problem(problem_id)
-    path = safe_path(problem_id)
+    path = user_code_path(problem_id)
+    code = read_user_code(problem)
     state = store.read()
     problem_state = state.get("problems", {}).get(problem_id, {})
     return {
@@ -55,14 +58,14 @@ async def get_problem(problem_id: str) -> dict[str, Any]:
         "chapter": problem.chapter,
         "filename": problem.filename,
         "path": problem.rel_path,
-        "code": path.read_text(encoding="utf-8"),
+        "code": code,
         "passed": problem.passed,
         "total": problem.total,
         "notes": problem_state.get("notes", ""),
         "bookmarked": bool(problem_state.get("bookmarked", False)),
         "attempts": problem_state.get("attempts", []),
-        "command": expected_command(index, problem_id),
-        "metadata": file_metadata(path),
+        "command": expected_command(index, problem_id, USER_CODE_DIR),
+        "metadata": file_metadata(path) if path.exists() else None,
     }
 
 
@@ -75,10 +78,21 @@ async def save_code(problem_id: str, payload: CodePayload) -> dict[str, Any]:
     return {"ok": True}
 
 
+@app.post("/api/problems/{problem_id}/reset")
+async def reset_code(problem_id: str) -> dict[str, Any]:
+    problem = require_problem(problem_id)
+    code = boilerplate_code(problem)
+    write_code(problem_id, code)
+    state = store.read()
+    state["session"]["lastProblemId"] = problem_id
+    store.write(state)
+    return {"ok": True, "code": code}
+
+
 @app.post("/api/problems/{problem_id}/run")
 async def run_tests(problem_id: str, payload: CodePayload) -> dict[str, Any]:
     write_code(problem_id, payload.code)
-    response = await run_problem(index, problem_id)
+    response = await run_problem(index, problem_id, USER_CODE_DIR)
     attempt = {
         "ranAt": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
         "passed": response.passed,
@@ -127,23 +141,48 @@ def require_problem(problem_id: str) -> Problem:
         raise HTTPException(status_code=404, detail="Unknown problem id") from exc
 
 
-def safe_path(problem_id: str) -> Path:
+def user_code_path(problem_id: str) -> Path:
+    problem = require_problem(problem_id)
+    if "/" in problem.filename or "\\" in problem.filename or ".." in problem.filename:
+        raise HTTPException(status_code=400, detail="Unsafe problem filename")
+    path = (USER_CODE_DIR / problem.filename).resolve()
     try:
-        return index.safe_problem_path(problem_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Unknown problem id") from exc
+        path.relative_to(USER_CODE_DIR.resolve())
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail="Problem path is outside user code directory") from exc
+    return path
+
+
+def read_user_code(problem: Problem) -> str:
+    path = user_code_path(problem.id)
+    if path.exists():
+        return path.read_text(encoding="utf-8")
+    return boilerplate_code(problem)
 
 
 def write_code(problem_id: str, code: str) -> None:
-    path = safe_path(problem_id)
+    path = user_code_path(problem_id)
     tmp = path.with_name(f".{path.name}.practice-ui-tmp")
     try:
+        path.parent.mkdir(parents=True, exist_ok=True)
         tmp.write_text(code, encoding="utf-8")
         os.replace(tmp, path)
     except OSError as exc:
         raise HTTPException(status_code=500, detail="Could not save code") from exc
+
+
+def boilerplate_code(problem: Problem) -> str:
+    try:
+        result = subprocess.run(
+            ["git", "show", f"HEAD:epi_judge_python/{problem.filename}"],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise HTTPException(status_code=500, detail="Could not load starter code from git") from exc
+    return result.stdout
 
 
 def problem_summary(problem: Problem, state: dict[str, Any]) -> dict[str, Any]:

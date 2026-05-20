@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import sys
 import time
@@ -13,15 +14,27 @@ from .problem_index import ProblemIndex
 STATS_RE = re.compile(r"(?P<passed>\d+)\s*/\s*(?P<total>\d+)")
 
 
-async def run_problem(index: ProblemIndex, problem_id: str, timeout_s: int = 30) -> RunResponse:
+async def run_problem(
+    index: ProblemIndex,
+    problem_id: str,
+    code_dir: Path | None = None,
+    timeout_s: int = 30,
+) -> RunResponse:
     problem = index.require(problem_id)
+    cwd = code_dir or index.python_dir
+    test_data_dir = index.repo_root / "test_data"
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(index.python_dir), env["PYTHONPATH"]] if env.get("PYTHONPATH") else [str(index.python_dir)]
+    )
     start = time.perf_counter()
     process = await asyncio.create_subprocess_exec(
         sys.executable,
         problem.filename,
         "--test-data-dir",
-        "../test_data",
-        cwd=str(index.python_dir),
+        str(test_data_dir),
+        cwd=str(cwd),
+        env=env,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -76,10 +89,11 @@ def parse_output_stats(stdout: str) -> tuple[int, int] | None:
     return int(match.group("passed")), int(match.group("total"))
 
 
-def expected_command(index: ProblemIndex, problem_id: str) -> dict[str, str]:
+def expected_command(index: ProblemIndex, problem_id: str, code_dir: Path | None = None) -> dict[str, str]:
     problem = index.require(problem_id)
+    cwd = code_dir or index.python_dir
+    test_data_dir = index.repo_root / "test_data"
     return {
-        "command": f"{Path(sys.executable).name} {problem.filename} --test-data-dir ../test_data",
-        "workingDirectory": str(index.python_dir),
+        "command": f"{Path(sys.executable).name} {problem.filename} --test-data-dir {test_data_dir}",
+        "workingDirectory": str(cwd),
     }
-
