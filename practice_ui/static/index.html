@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EPI Python Practice</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar">
+        <div class="brand">
+          <div>
+            <h1>EPI Python</h1>
+            <p id="progressSummary">Loading problems...</p>
+          </div>
+        </div>
+        <div class="filters">
+          <input id="searchInput" type="search" placeholder="Search title or file" autocomplete="off" />
+          <select id="chapterFilter" aria-label="Chapter"></select>
+          <div class="status-tabs" id="statusTabs">
+            <button data-status="all" class="active">All</button>
+            <button data-status="not_started">Unstarted</button>
+            <button data-status="in_progress">In Progress</button>
+            <button data-status="solved">Solved</button>
+            <button data-status="bookmarked">Bookmarked</button>
+          </div>
+          <select id="sortSelect" aria-label="Sort order">
+            <option value="book_order">Book order</option>
+            <option value="unsolved_first">Unsolved first</option>
+          </select>
+        </div>
+        <div class="problem-list" id="problemList"></div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <button id="mobileProblems" class="mobile-only">Problems</button>
+          <div>
+            <div class="chapter-label" id="problemChapter">Select a problem</div>
+            <h2 id="problemTitle">Python practice workspace</h2>
+            <div class="file-line" id="problemPath"></div>
+          </div>
+          <div class="top-actions">
+            <button id="bookmarkButton" class="icon-button" title="Bookmark">☆</button>
+            <span id="dirtyState" class="dirty-state"></span>
+            <span id="progressBadge" class="badge">0 / 0</span>
+            <button id="resetViewButton">Reset view</button>
+            <button id="saveButton">Save</button>
+            <button id="runButton" class="primary">Run Tests</button>
+          </div>
+        </header>
+        <section class="editor-wrap">
+          <div id="editor"></div>
+          <textarea id="fallbackEditor" spellcheck="false"></textarea>
+        </section>
+      </main>
+
+      <aside class="right-panel">
+        <div class="tabs" id="rightTabs">
+          <button data-tab="output" class="active">Output</button>
+          <button data-tab="notes">Notes</button>
+          <button data-tab="history">History</button>
+          <button data-tab="info">Info</button>
+        </div>
+        <section class="tab-panel active" id="tab-output">
+          <div id="runSummary" class="run-summary muted">No run yet.</div>
+          <h3>stdout</h3>
+          <pre id="stdoutBlock"></pre>
+          <h3 id="stderrTitle">stderr</h3>
+          <pre id="stderrBlock"></pre>
+        </section>
+        <section class="tab-panel" id="tab-notes">
+          <textarea id="notesArea" placeholder="Approach, edge cases, complexity, mistakes to revisit..."></textarea>
+          <div class="panel-actions">
+            <button id="saveNotesButton">Save Notes</button>
+          </div>
+        </section>
+        <section class="tab-panel" id="tab-history">
+          <div id="historyList" class="history-list"></div>
+        </section>
+        <section class="tab-panel" id="tab-info">
+          <dl class="info-list" id="infoList"></dl>
+        </section>
+      </aside>
+    </div>
+    <div id="toast" class="toast"></div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
