@@ -7,28 +7,28 @@
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
-    <div class="app-shell">
+    <div class="app-shell" id="appShell">
+      <button id="sidebarReopen" class="sidebar-reopen icon-button" title="Open problems" aria-label="Open problems">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/><path d="M4 4h16v16H4z"/></svg>
+      </button>
       <aside class="sidebar" id="sidebar">
         <div class="brand">
           <div>
             <h1>EPI Python</h1>
             <p id="progressSummary">Loading problems...</p>
           </div>
+          <button id="sidebarToggle" class="icon-button" title="Collapse problems" aria-label="Collapse problems">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/><path d="M4 4h16v16H4z"/></svg>
+          </button>
         </div>
         <div class="filters">
           <input id="searchInput" type="search" placeholder="Search title or file" autocomplete="off" />
-          <select id="chapterFilter" aria-label="Chapter"></select>
           <div class="status-tabs" id="statusTabs">
-            <button data-status="all" class="active">All</button>
-            <button data-status="not_started">Unstarted</button>
-            <button data-status="in_progress">In Progress</button>
-            <button data-status="solved">Solved</button>
-            <button data-status="bookmarked">Bookmarked</button>
+            <button data-status="all" class="active" title="All" aria-label="All"></button>
+            <button data-status="starred" title="Starred" aria-label="Starred"></button>
+            <button data-status="in_progress" title="In Progress" aria-label="In Progress"></button>
+            <button data-status="solved" title="Solved" aria-label="Solved"></button>
           </div>
-          <select id="sortSelect" aria-label="Sort order">
-            <option value="book_order">Book order</option>
-            <option value="unsolved_first">Unsolved first</option>
-          </select>
         </div>
         <div class="problem-list" id="problemList"></div>
       </aside>
@@ -42,7 +42,12 @@
             <div class="file-line" id="problemPath"></div>
           </div>
           <div class="top-actions">
-            <button id="bookmarkButton" class="icon-button" title="Bookmark">☆</button>
+            <div class="theme-toggle" id="themeToggle" aria-label="Theme">
+              <button data-theme="light" title="Light theme" aria-label="Light theme"></button>
+              <button data-theme="dark" title="Dark theme" aria-label="Dark theme"></button>
+              <button data-theme="system" title="System theme" aria-label="System theme"></button>
+            </div>
+            <button id="starButton" class="icon-button" title="Star problem" aria-label="Star problem"></button>
             <span id="dirtyState" class="dirty-state"></span>
             <span id="progressBadge" class="badge">0 / 0</span>
             <button id="resetViewButton">Reset view</button>
