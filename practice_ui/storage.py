@@ -57,6 +57,13 @@ class StateStore:
         state["session"]["lastProblemId"] = problem_id
         self.write(state)
 
+    def get_attempt(self, problem_id: str, attempt_id: str) -> dict[str, Any] | None:
+        problem_state = self.read().get("problems", {}).get(problem_id, {})
+        for attempt in problem_state.get("attempts", []):
+            if attempt.get("id") == attempt_id:
+                return attempt
+        return None
+
 
 def merge_defaults(state: dict[str, Any]) -> dict[str, Any]:
     merged = deepcopy(DEFAULT_STATE)

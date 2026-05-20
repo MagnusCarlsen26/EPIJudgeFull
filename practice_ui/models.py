@@ -13,6 +13,11 @@ class CodePayload(BaseModel):
     code: str
 
 
+class RunPayload(BaseModel):
+    code: str
+    scope: Literal["all", "sample"] = "all"
+
+
 class NotesPayload(BaseModel):
     notes: str
 
@@ -42,4 +47,3 @@ class RunResponse(BaseModel):
     stdout: str
     stderr: str
     result: RunResult
-

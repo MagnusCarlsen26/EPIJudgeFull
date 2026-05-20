@@ -18,11 +18,12 @@ async def run_problem(
     index: ProblemIndex,
     problem_id: str,
     code_dir: Path | None = None,
+    test_data_dir: Path | None = None,
     timeout_s: int = 30,
 ) -> RunResponse:
     problem = index.require(problem_id)
     cwd = code_dir or index.python_dir
-    test_data_dir = index.repo_root / "test_data"
+    resolved_test_data_dir = test_data_dir or index.repo_root / "test_data"
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join(
         [str(index.python_dir), env["PYTHONPATH"]] if env.get("PYTHONPATH") else [str(index.python_dir)]
@@ -32,7 +33,8 @@ async def run_problem(
         sys.executable,
         problem.filename,
         "--test-data-dir",
-        str(test_data_dir),
+        str(resolved_test_data_dir),
+        "--no-update-js",
         cwd=str(cwd),
         env=env,
         stdout=asyncio.subprocess.PIPE,
@@ -94,6 +96,6 @@ def expected_command(index: ProblemIndex, problem_id: str, code_dir: Path | None
     cwd = code_dir or index.python_dir
     test_data_dir = index.repo_root / "test_data"
     return {
-        "command": f"{Path(sys.executable).name} {problem.filename} --test-data-dir {test_data_dir}",
+        "command": f"{Path(sys.executable).name} {problem.filename} --test-data-dir {test_data_dir} --no-update-js",
         "workingDirectory": str(cwd),
     }

@@ -380,6 +380,12 @@ svg .fill {
   justify-content: flex-end;
 }
 
+.run-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .icon-button {
   width: 36px;
   padding: 0;
@@ -488,7 +494,7 @@ svg .fill {
 
 .tabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   padding: 10px;
   border-bottom: 1px solid var(--line);
@@ -552,28 +558,56 @@ pre {
 }
 
 .history-row {
-  padding: 10px 0;
+  display: block;
+  width: 100%;
+  min-height: 0;
+  margin: 0 0 8px;
+  padding: 10px;
   border-bottom: 1px solid var(--line);
+  text-align: left;
   font-size: 13px;
 }
 
 .history-row strong { display: block; }
 
-.info-list {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 8px 12px;
-  margin: 0;
-  font-size: 13px;
-}
-
-.info-list dt {
+.history-row span {
+  display: block;
+  margin-top: 3px;
   color: var(--muted);
+  font-size: 12px;
 }
 
-.info-list dd {
-  margin: 0;
-  overflow-wrap: anywhere;
+.history-row.passed {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.history-row.failed,
+.history-row.runtime_error,
+.history-row.timeout,
+.history-row.failed-state {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.history-row.active {
+  background: var(--active-bg);
+}
+
+.history-code {
+  margin-top: 14px;
+}
+
+.history-code-header {
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.history-code pre,
+#historyCodeBlock {
+  max-height: 420px;
 }
 
 .toast {

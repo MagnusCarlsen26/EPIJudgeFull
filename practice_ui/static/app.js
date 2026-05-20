@@ -49,6 +49,7 @@ const state = {
   editor: null,
   editorKind: "textarea",
   lastRun: null,
+  selectedAttemptId: null,
   autosaveTimer: null,
   autosaveDelayMs: 900,
   saveInFlight: false,
@@ -89,9 +90,9 @@ function bindElements() {
   for (const id of [
     "appShell", "progressSummary", "searchInput", "statusTabs", "problemList",
     "problemChapter", "problemTitle", "starButton", "dirtyState", "progressBadge",
-    "resetViewButton", "runButton", "editor", "fallbackEditor", "rightTabs", "runSummary",
+    "resetViewButton", "runSampleButton", "runButton", "editor", "fallbackEditor", "rightTabs", "runSummary",
     "stdoutBlock", "stderrBlock", "stderrTitle", "notesArea", "saveNotesButton", "historyList",
-    "infoList", "toast", "sidebar", "mobileProblems", "themeButton", "sidebarToggle", "sidebarReopen",
+    "historyCode", "historyCodeHeader", "historyCodeBlock", "toast", "sidebar", "mobileProblems", "themeButton", "sidebarToggle", "sidebarReopen",
   ]) {
     el[id] = document.getElementById(id);
   }
@@ -108,7 +109,8 @@ function bindEvents() {
     const button = event.target.closest("button[data-tab]");
     if (button) setTab(button.dataset.tab);
   });
-  el.runButton.addEventListener("click", runTests);
+  el.runSampleButton.addEventListener("click", () => runTests("sample"));
+  el.runButton.addEventListener("click", () => runTests("all"));
   el.resetViewButton.addEventListener("click", resetEditorView);
   el.starButton.addEventListener("click", toggleStar);
   el.saveNotesButton.addEventListener("click", saveNotes);
@@ -131,7 +133,7 @@ function bindEvents() {
     }
     if (event.key === "Enter") {
       event.preventDefault();
-      runTests();
+      runTests("all");
     }
   });
   window.addEventListener("beforeunload", (event) => {
@@ -276,6 +278,7 @@ async function openProblem(problemId, options = {}) {
     state.current = detail;
     state.savedCode = detail.code;
     state.lastRun = null;
+    state.selectedAttemptId = null;
     setEditorValue(detail.code);
     state.session.lastProblemId = problemId;
     ensureProblemChapterExpanded(problemId);
@@ -296,42 +299,61 @@ function renderCurrentProblem() {
   renderStarButton(problem.bookmarked);
   el.notesArea.value = problem.notes || "";
   renderHistory(problem.attempts || []);
-  renderInfo(problem);
   clearOutput();
   updateDirtyState();
 }
 
 function renderHistory(attempts) {
-  el.historyList.innerHTML = attempts.slice().reverse().map((attempt) => `
-    <div class="history-row">
-      <strong>${escapeHtml(attempt.result || "run")} · ${attempt.passed} / ${attempt.total}</strong>
-      <span>${escapeHtml(attempt.ranAt)} · exit ${attempt.exitCode} · ${attempt.durationMs}ms</span>
-    </div>
-  `).join("") || `<div class="muted">No attempts yet.</div>`;
+  const rows = attempts.slice().reverse();
+  el.historyList.innerHTML = rows.map((attempt, index) => {
+    const id = attempt.id || "";
+    const result = formatResult(attempt.result);
+    const failed = isFailedAttempt(attempt);
+    const selected = id && id === state.selectedAttemptId ? " active" : "";
+    return `
+      <button class="history-row ${escapeHtml(attempt.result || "run")}${failed ? " failed-state" : ""}${selected}" data-attempt-id="${escapeHtml(id)}" data-attempt-index="${index}">
+        <strong>${escapeHtml(result)} · ${attempt.passed} / ${attempt.total}</strong>
+        <span>${escapeHtml(formatAttemptTime(attempt.ranAt))} · exit ${attempt.exitCode} · ${attempt.durationMs}ms</span>
+      </button>
+    `;
+  }).join("") || `<div class="muted">No attempts yet.</div>`;
+  el.historyCode.hidden = true;
+  el.historyCodeHeader.textContent = "";
+  el.historyCodeBlock.textContent = "";
+  el.historyList.querySelectorAll(".history-row[data-attempt-id]").forEach((button) => {
+    button.addEventListener("click", () => showAttemptCode(rows[Number(button.dataset.attemptIndex)]));
+  });
 }
 
-function renderInfo(problem) {
-  const command = problem.command || {};
-  const metadata = problem.metadata || {};
-  const rows = [
-    ["Command", command.command || ""],
-    ["Working dir", command.workingDirectory || ""],
-    ["File", problem.path],
-    ["Size", metadata.sizeBytes == null ? "" : `${metadata.sizeBytes} bytes`],
-    ["Modified", metadata.modifiedAt || ""],
-  ];
-  el.infoList.innerHTML = rows.map(([key, value]) => `<dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd>`).join("");
+async function showAttemptCode(attempt) {
+  if (!state.current || !attempt) return;
+  state.selectedAttemptId = attempt.id;
+  renderHistory(state.current.attempts || []);
+  el.historyCode.hidden = false;
+  el.historyCodeHeader.textContent = `${formatResult(attempt.result)} · ${attempt.passed} / ${attempt.total} · ${formatAttemptTime(attempt.ranAt)}`;
+  if (!attempt.id) {
+    el.historyCodeBlock.textContent = "Code snapshot is not available for this older attempt.";
+    return;
+  }
+  el.historyCodeBlock.textContent = "Loading...";
+  try {
+    const payload = await api.get(`/api/problems/${encodeURIComponent(state.current.id)}/attempts/${encodeURIComponent(attempt.id)}/code`);
+    el.historyCodeBlock.textContent = payload.available ? payload.code : (payload.detail || "Code snapshot is not available for this older attempt.");
+  } catch (error) {
+    el.historyCodeBlock.textContent = error.message;
+  }
 }
 
-async function runTests() {
+async function runTests(scope = "all") {
   if (!state.current || state.running) return;
   state.running = true;
   el.runButton.disabled = true;
+  el.runSampleButton.disabled = true;
   el.runButton.innerHTML = icons.running;
   setTab("output");
   try {
     const code = getEditorValue();
-    const result = await api.post(`/api/problems/${encodeURIComponent(state.current.id)}/run`, { code });
+    const result = await api.post(`/api/problems/${encodeURIComponent(state.current.id)}/run`, { code, scope });
     state.savedCode = code;
     state.lastRun = result;
     renderRunOutput(result);
@@ -341,6 +363,7 @@ async function runTests() {
   } finally {
     state.running = false;
     el.runButton.disabled = false;
+    el.runSampleButton.disabled = false;
     el.runButton.innerHTML = icons.run;
     updateDirtyState();
   }
@@ -389,7 +412,7 @@ async function toggleStar() {
 
 function renderRunOutput(result) {
   el.runSummary.className = `run-summary ${result.result}`;
-  el.runSummary.textContent = `${result.result} · ${result.passed} / ${result.total} · exit ${result.exitCode} · ${result.durationMs}ms`;
+  el.runSummary.textContent = `${result.scope || "all"} · ${result.result} · ${result.passed} / ${result.total} · exit ${result.exitCode} · ${result.durationMs}ms`;
   el.stdoutBlock.textContent = result.stdout || "";
   el.stderrBlock.textContent = result.stderr || "";
   el.stderrTitle.style.display = result.stderr ? "block" : "none";
@@ -685,6 +708,35 @@ function showToast(message) {
   el.toast.classList.add("show");
   clearTimeout(showToast.timer);
   showToast.timer = setTimeout(() => el.toast.classList.remove("show"), 3200);
+}
+
+function formatAttemptTime(isoString) {
+  if (!isoString) return "Unknown time";
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) return isoString;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const attemptDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.round((today - attemptDay) / 86400000);
+  const time = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(date);
+  if (diffDays === 0) return `Today, ${time}`;
+  if (diffDays === 1) return `Yesterday, ${time}`;
+  const day = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(date);
+  return `${day}, ${time}`;
+}
+
+function formatResult(result) {
+  const labels = {
+    passed: "Passed",
+    failed: "Failed",
+    runtime_error: "Runtime error",
+    timeout: "Timeout",
+  };
+  return labels[result] || "Run";
+}
+
+function isFailedAttempt(attempt) {
+  return ["failed", "runtime_error", "timeout"].includes(attempt.result) || Number(attempt.exitCode) !== 0;
 }
 
 function escapeHtml(value) {

@@ -50,7 +50,8 @@
             <span id="dirtyState" class="dirty-state"></span>
             <span id="progressBadge" class="badge">0 / 0</span>
             <button id="resetViewButton">Reset code</button>
-            <button id="runButton" class="primary icon-button" title="Run Tests" aria-label="Run Tests"></button>
+            <button id="runSampleButton">Run Samples</button>
+            <button id="runButton" class="primary icon-button" title="Run All Tests" aria-label="Run All Tests"></button>
           </div>
         </header>
         <section class="editor-wrap">
@@ -64,7 +65,6 @@
           <button data-tab="output" class="active">Output</button>
           <button data-tab="notes">Notes</button>
           <button data-tab="history">History</button>
-          <button data-tab="info">Info</button>
         </div>
         <section class="tab-panel active" id="tab-output">
           <div id="runSummary" class="run-summary muted">No run yet.</div>
@@ -81,9 +81,10 @@
         </section>
         <section class="tab-panel" id="tab-history">
           <div id="historyList" class="history-list"></div>
-        </section>
-        <section class="tab-panel" id="tab-info">
-          <dl class="info-list" id="infoList"></dl>
+          <div id="historyCode" class="history-code" hidden>
+            <div id="historyCodeHeader" class="history-code-header"></div>
+            <pre id="historyCodeBlock"></pre>
+          </div>
         </section>
       </aside>
     </div>
