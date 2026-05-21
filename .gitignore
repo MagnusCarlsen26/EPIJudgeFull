@@ -30,3 +30,7 @@ epi_judge_java/java_build/
 
 # Local practice UI state
 .practice_ui/
+
+# Node / TypeScript backend artifacts
+node_modules/
+backend/dist/

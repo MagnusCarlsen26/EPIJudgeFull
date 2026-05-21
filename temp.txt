@@ -1,0 +1,73 @@
+# P0
+* Global hotkey launch
+* Instant open overlay
+* Auto save notes
+* Escape to close
+
+#P1
+
+
+* Keyboard-only navigation
+* Lightning-fast search
+* Fuzzy note search
+* Recent notes history
+* Pin important notes
+* Temporary expiring notes
+* One-line quick notes
+* Multi-line scratchpad
+* Markdown support light
+* Code snippet support
+* Paste auto formatting
+* Clipboard capture shortcut
+* Drag-free interactions
+* Offline-first storage
+* Local encrypted notes
+* Cross-device sync optional
+* Zero-login mode
+* Startup with system
+* Tiny memory footprint
+* Dark mode support
+* Minimal distraction UI
+* Tag notes quickly
+* Smart auto tagging
+* Timestamp every note
+* Daily scratch space
+* Command palette actions
+* Vim keybindings optional
+* Terminal-style interface
+* Quick export notes
+* Archive old notes
+* Duplicate note shortcut
+* Voice-to-note capture
+* OCR screenshot capture
+* AI summarize notes
+* AI semantic search
+* Auto-delete trash
+* Undo accidental deletion
+* Floating mini widget
+* Multi-monitor support
+* Instant startup caching
+* Keyboard shortcut customization
+* Note color highlighting
+* Favorite snippets storage
+* Session-based workspaces
+* Pinned clipboard history
+* Hyperlink detection
+* File path detection
+* Git branch awareness
+* IDE integration optional
+* Browser extension capture
+* Window state restore
+* Portable executable version
+* SQLite local database
+* Crash-safe persistence
+* Import existing notes
+* Export markdown files
+* Activity heatmap insights
+* Low-distraction animations
+* Sound feedback optional
+* Screenshot-to-note shortcut
+* Auto-title generation
+* Calendar timeline view
+* Streak-based usage stats
+* Open-source plugin system

@@ -5,7 +5,7 @@
 # This comes pretty handy while you are working a problem, and then you want to see the result soon without thinking program name.
 BUILD_DIR := java_build
 SRC_DIR := .
-TEST_DATA_DIR := ../test_data
+TEST_DATA_DIR := ../../test_data
 
 # Modify this line if you want to pass custom arguments
 PROGRAM_ARGS := --test-data-dir $(TEST_DATA_DIR) 

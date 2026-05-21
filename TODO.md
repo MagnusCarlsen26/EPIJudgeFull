@@ -11,3 +11,4 @@
 - Clean code in backend and frontend
 - Backend in TS. Can't bear python
 - CI/CD to re hash CDN content?
+- Is build-data.mjs out dated?

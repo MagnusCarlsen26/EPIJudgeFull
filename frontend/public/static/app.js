@@ -46,7 +46,7 @@ function jsonRequest(method, body) {
 async function messageFrom(response) {
   try {
     const payload = await response.json();
-    return payload.detail || response.statusText;
+    return payload.error?.message || payload.detail || response.statusText;
   } catch {
     return response.statusText;
   }
@@ -77,6 +77,12 @@ const state = {
   pendingAutosave: false,
   suppressAutosave: false,
   resetVersion: 0,
+};
+
+const storageKeys = {
+  session: "epi.session.v2",
+  problemState: "epi.problemState.v2",
+  codePrefix: "epi.code.v2.",
 };
 
 const el = {};
@@ -168,14 +174,10 @@ function bindEvents() {
 async function loadInitialData() {
   try {
     const manifest = await cdn.get("/data/manifest.json");
-    const [session, problems, problemState] = await Promise.all([
-      api.get("/api/session"),
-      cdn.get(manifest.problems),
-      api.get("/api/problem-state"),
-    ]);
+    const problems = await cdn.get(manifest.problems);
     state.manifest = manifest;
-    state.problemState = problemState.problems || {};
-    state.session = normalizeSession(session.session);
+    state.problemState = readJson(storageKeys.problemState, {});
+    state.session = normalizeSession(readJson(storageKeys.session, state.session));
     state.chapters = mergeProblemState(problems.chapters, state.problemState);
     applyTheme(state.session.theme);
     applySidebarState();
@@ -302,17 +304,15 @@ function renderProblemButton(problem) {
 async function openProblem(problemId, options = {}) {
   if (!options.force && isDirty() && !confirm("Discard unsaved editor changes and switch problems?")) return;
   try {
-    const [detail, boilerplate] = await Promise.all([
-      api.get(`/api/problems/${encodeURIComponent(problemId)}`),
-      loadBoilerplate(problemId),
-    ]);
+    const boilerplate = await loadBoilerplate(problemId);
     const staticProblem = findProblem(problemId);
-    const code = detail.code ?? boilerplate;
-    state.current = { ...staticProblem, ...detail, code, boilerplate };
+    const localState = problemLocalState(problemId);
+    const code = readCode(problemId) ?? boilerplate;
+    state.current = { ...staticProblem, ...localState, code, boilerplate };
     state.savedCode = code;
     state.lastRun = null;
     state.selectedAttemptId = null;
-    setEditorValue(detail.code);
+    setEditorValue(code);
     state.session.lastProblemId = problemId;
     ensureProblemChapterExpanded(problemId);
     renderCurrentProblem();
@@ -368,13 +368,7 @@ async function showAttemptCode(attempt) {
     el.historyCodeBlock.textContent = "Code snapshot is not available for this older attempt.";
     return;
   }
-  el.historyCodeBlock.textContent = "Loading...";
-  try {
-    const payload = await api.get(`/api/problems/${encodeURIComponent(state.current.id)}/attempts/${encodeURIComponent(attempt.id)}/code`);
-    el.historyCodeBlock.textContent = payload.available ? payload.code : (payload.detail || "Code snapshot is not available for this older attempt.");
-  } catch (error) {
-    el.historyCodeBlock.textContent = error.message;
-  }
+  el.historyCodeBlock.textContent = attempt.code || "Code snapshot is not available.";
 }
 
 async function runTests(scope = "all") {
@@ -386,11 +380,14 @@ async function runTests(scope = "all") {
   setTab("output");
   try {
     const code = getEditorValue();
-    const result = await api.post(`/api/problems/${encodeURIComponent(state.current.id)}/run`, { code, scope });
+    await persistCode(code);
+    const created = await api.post("/api/runs", { problemId: state.current.id, language: "python", code, scope });
+    renderRunPending(scope, created.status);
+    const result = await pollRun(created.runId);
     state.savedCode = code;
-    state.lastRun = result;
-    renderRunOutput(result);
-    await refreshAfterRun(state.current.id);
+    state.lastRun = { ...result.result, scope };
+    renderRunOutput(state.lastRun);
+    refreshAfterRun(state.current.id, state.lastRun, code);
   } catch (error) {
     showToast(error.message);
   } finally {
@@ -402,15 +399,32 @@ async function runTests(scope = "all") {
   }
 }
 
-async function refreshAfterRun(problemId) {
-  const [problemState, detail] = await Promise.all([
-    api.get("/api/problem-state"),
-    api.get(`/api/problems/${encodeURIComponent(problemId)}`),
-  ]);
-  state.problemState = problemState.problems || {};
+function refreshAfterRun(problemId, result, code) {
+  const local = problemLocalState(problemId);
+  const attempt = {
+    id: `local-${Date.now()}`,
+    ranAt: new Date().toISOString(),
+    scope: result.scope,
+    passed: result.passed,
+    total: result.total,
+    exitCode: result.exitCode,
+    durationMs: result.durationMs,
+    result: result.verdict,
+    code,
+  };
+  const attempts = [...(local.attempts || []), attempt].slice(-25);
+  state.problemState[problemId] = {
+    ...local,
+    attempts,
+    status: result.verdict === "passed" ? "solved" : "in_progress",
+    passed: result.passed,
+    total: result.total,
+    lastRunAt: attempt.ranAt,
+  };
+  writeJson(storageKeys.problemState, state.problemState);
   state.chapters = mergeProblemState(state.chapters, state.problemState);
   const staticProblem = findProblem(problemId);
-  state.current = { ...staticProblem, ...detail, code: state.savedCode, boilerplate: state.current.boilerplate };
+  state.current = { ...staticProblem, ...state.problemState[problemId], code: state.savedCode, boilerplate: state.current.boilerplate };
   renderProblemList();
   renderCurrentProblem();
   if (state.lastRun) renderRunOutput(state.lastRun);
@@ -418,38 +432,49 @@ async function refreshAfterRun(problemId) {
 
 async function saveNotes() {
   if (!state.current) return;
-  try {
-    await api.put(`/api/problems/${encodeURIComponent(state.current.id)}/notes`, { notes: el.notesArea.value });
-    state.current.notes = el.notesArea.value;
-    showToast("Notes saved.");
-    await refreshProblemState();
-    renderProblemList();
-  } catch (error) {
-    showToast(error.message);
-  }
+  updateProblemLocalState(state.current.id, { notes: el.notesArea.value });
+  state.current.notes = el.notesArea.value;
+  showToast("Notes saved.");
+  renderProblemList();
 }
 
 async function toggleStar() {
   if (!state.current) return;
   const bookmarked = !state.current.bookmarked;
-  try {
-    await api.put(`/api/problems/${encodeURIComponent(state.current.id)}/bookmark`, { bookmarked });
-    state.current.bookmarked = bookmarked;
-    renderStarButton(bookmarked);
-    await refreshProblemState();
-    renderProblemList();
-  } catch (error) {
-    showToast(error.message);
-  }
+  updateProblemLocalState(state.current.id, { bookmarked });
+  state.current.bookmarked = bookmarked;
+  renderStarButton(bookmarked);
+  renderProblemList();
 }
 
 function renderRunOutput(result) {
-  el.runSummary.className = `run-summary ${result.result}`;
-  el.runSummary.textContent = `${result.scope || "all"} · ${result.result} · ${result.passed} / ${result.total} · exit ${result.exitCode} · ${result.durationMs}ms`;
+  const verdict = result.verdict || result.result;
+  el.runSummary.className = `run-summary ${verdict}`;
+  el.runSummary.textContent = `${result.scope || "all"} · ${verdict} · ${result.passed} / ${result.total} · exit ${result.exitCode} · ${result.durationMs}ms`;
   el.stdoutBlock.textContent = result.stdout || "";
-  el.stderrBlock.textContent = result.stderr || "";
-  el.stderrTitle.style.display = result.stderr ? "block" : "none";
-  el.stderrBlock.style.display = result.stderr ? "block" : "none";
+  const stderr = [result.stderr, result.compileOutput, result.message].filter(Boolean).join("\n");
+  el.stderrBlock.textContent = stderr;
+  el.stderrTitle.style.display = stderr ? "block" : "none";
+  el.stderrBlock.style.display = stderr ? "block" : "none";
+}
+
+function renderRunPending(scope, status) {
+  el.runSummary.className = "run-summary muted";
+  el.runSummary.textContent = `${scope} · ${status}`;
+  el.stdoutBlock.textContent = "";
+  el.stderrBlock.textContent = "";
+  el.stderrTitle.style.display = "none";
+  el.stderrBlock.style.display = "none";
+}
+
+async function pollRun(runId) {
+  for (;;) {
+    await delay(900);
+    const payload = await api.get(`/api/runs/${encodeURIComponent(runId)}`);
+    if (payload.status === "completed") return payload;
+    if (payload.status === "error") throw new Error(payload.error?.message || "Run failed.");
+    renderRunPending(payload.scope || "all", payload.status);
+  }
 }
 
 function clearOutput() {
@@ -613,7 +638,7 @@ function chapterProgress(chapter) {
 }
 
 function persistSession() {
-  api.put("/api/session", { session: state.session }).catch((error) => showToast(error.message));
+  writeJson(storageKeys.session, state.session);
 }
 
 function setTab(tab) {
@@ -631,7 +656,7 @@ async function resetEditorView() {
   const resetVersion = state.resetVersion;
   try {
     const code = state.current.boilerplate ?? await loadBoilerplate(state.current.id);
-    await api.put(`/api/problems/${encodeURIComponent(state.current.id)}/code`, { code });
+    writeCode(state.current.id, code);
     if (resetVersion !== state.resetVersion) return;
     state.savedCode = code;
     state.current.code = code;
@@ -721,7 +746,7 @@ async function persistCode(code, resetVersion = state.resetVersion) {
   el.dirtyState.textContent = "Saving...";
   el.dirtyState.dataset.state = "saving";
   try {
-    await api.put(`/api/problems/${encodeURIComponent(state.current.id)}/code`, { code });
+    writeCode(state.current.id, code);
     if (resetVersion !== state.resetVersion) return;
     state.savedCode = code;
     updateDirtyState("Saved");
@@ -736,8 +761,7 @@ function findProblem(problemId) {
 }
 
 async function refreshProblemState() {
-  const problemState = await api.get("/api/problem-state");
-  state.problemState = problemState.problems || {};
+  state.problemState = readJson(storageKeys.problemState, {});
   state.chapters = mergeProblemState(state.chapters, state.problemState);
 }
 
@@ -806,6 +830,41 @@ function formatResult(result) {
 
 function isFailedAttempt(attempt) {
   return ["failed", "runtime_error", "timeout"].includes(attempt.result) || Number(attempt.exitCode) !== 0;
+}
+
+function readJson(key, fallback) {
+  try {
+    const value = localStorage.getItem(key);
+    return value ? JSON.parse(value) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeJson(key, value) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+function readCode(problemId) {
+  return localStorage.getItem(`${storageKeys.codePrefix}${problemId}`);
+}
+
+function writeCode(problemId, code) {
+  localStorage.setItem(`${storageKeys.codePrefix}${problemId}`, code);
+}
+
+function problemLocalState(problemId) {
+  return state.problemState[problemId] || {};
+}
+
+function updateProblemLocalState(problemId, values) {
+  state.problemState[problemId] = { ...problemLocalState(problemId), ...values };
+  writeJson(storageKeys.problemState, state.problemState);
+  state.chapters = mergeProblemState(state.chapters, state.problemState);
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function escapeHtml(value) {
