@@ -28,6 +28,10 @@ describe("resultNormalizer", () => {
     expect(normalizeJudge0Output(output(3, "2 / 3\n")).verdict).toBe("failed");
   });
 
+  it("maps nonzero EPI assertion output to failed", () => {
+    expect(normalizeJudge0Output(output(11, "Test FAILED\n*** You've passed 1/3 tests. ***\n")).verdict).toBe("failed");
+  });
+
   it("maps compile and timeout statuses", () => {
     expect(normalizeJudge0Output(output(6)).verdict).toBe("compile_error");
     expect(normalizeJudge0Output(output(5)).verdict).toBe("timeout");

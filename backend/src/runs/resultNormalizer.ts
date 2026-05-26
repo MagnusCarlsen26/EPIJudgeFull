@@ -36,9 +36,9 @@ export function parseOutputStats(stdout: string): { passed: number; total: numbe
 function verdictFor(statusId: number, stats: { passed: number; total: number } | null): RunVerdict {
   if (statusId === 6) return "compile_error";
   if ([5, 13].includes(statusId)) return "timeout";
+  if (stats && stats.total > 0) return stats.passed >= stats.total ? "passed" : "failed";
   if (statusId !== 3) return "runtime_error";
-  if (!stats || stats.total === 0) return "internal_error";
-  return stats.passed >= stats.total ? "passed" : "failed";
+  return "internal_error";
 }
 
 function exitCodeFor(statusId: number): number {
