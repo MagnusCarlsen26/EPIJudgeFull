@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>EPI Python Practice</title>
+    <title>EPI Practice</title>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
@@ -15,7 +15,7 @@
         <div class="brand">
           <div>
             <div class="brand-title">
-              <h1>EPI Python</h1>
+              <h1>EPI Practice</h1>
               <button id="themeButton" class="icon-button" title="System theme" aria-label="System theme"></button>
             </div>
             <p id="progressSummary">Loading problems...</p>
@@ -37,7 +37,7 @@
       </aside>
 
       <main class="workspace">
-        <button id="rightPanelReopen" class="right-panel-reopen icon-button" title="Open output panel" aria-label="Open output panel">
+        <button id="rightPanelReopen" class="right-panel-reopen icon-button" title="Open panel" aria-label="Open panel">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/><path d="M4 4h16v16H4z"/></svg>
         </button>
         <header class="topbar">
@@ -45,11 +45,16 @@
           <div>
             <div class="chapter-label" id="problemChapter">Select a problem</div>
             <div class="problem-title-row">
-              <h2 id="problemTitle">Python practice workspace</h2>
+              <h2 id="problemTitle">Practice workspace</h2>
               <button id="starButton" class="icon-button" title="Star problem" aria-label="Star problem"></button>
             </div>
           </div>
           <div class="top-actions">
+            <div class="language-tabs" id="languageTabs">
+              <button data-language="python" class="active">Python</button>
+              <button data-language="cpp">C++</button>
+              <button data-language="java">Java</button>
+            </div>
             <span id="dirtyState" class="dirty-state"></span>
             <span id="progressBadge" class="badge">0 / 0</span>
             <button id="resetViewButton">Reset code</button>
@@ -64,36 +69,56 @@
       </main>
 
       <aside class="right-panel" id="rightPanel">
+        <div
+          class="right-panel-resize-handle"
+          id="rightPanelResizeHandle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize panel"
+          tabindex="0"
+        ></div>
         <div class="right-panel-header">
-          <button id="rightPanelToggle" class="icon-button" title="Collapse output panel" aria-label="Collapse output panel">
+          <button id="rightPanelToggle" class="icon-button" title="Collapse panel" aria-label="Collapse panel">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/><path d="M4 4h16v16H4z"/></svg>
           </button>
+        </div>
+        <section class="problem-panel" id="problemPanel">
+          <button class="problem-panel-toggle" id="problemPanelToggle" type="button" aria-expanded="true">
+            <span class="problem-panel-toggle-label">Question</span>
+            <span class="problem-panel-chevron" aria-hidden="true"></span>
+          </button>
+          <div class="problem-panel-body" id="problemPanelBody"></div>
+          <div class="problem-spoilers" id="problemSpoilers"></div>
+        </section>
+        <div class="right-panel-lower">
           <div class="tabs" id="rightTabs">
             <button data-tab="output" class="active">Output</button>
             <button data-tab="notes">Notes</button>
             <button data-tab="history">History</button>
           </div>
+          <div class="right-panel-tab-body">
+            <section class="tab-panel active" id="tab-output">
+              <div id="runSummary" class="run-summary muted">No run yet.</div>
+              <h3>stdout</h3>
+              <pre id="stdoutBlock"></pre>
+              <h3 id="stderrTitle">stderr</h3>
+              <pre id="stderrBlock"></pre>
+            </section>
+            <section class="tab-panel" id="tab-notes">
+              <textarea id="notesArea" placeholder="Approach, edge cases, complexity, mistakes to revisit..."></textarea>
+              <div class="panel-actions">
+                <button id="saveNotesButton">Save Notes</button>
+              </div>
+            </section>
+            <section class="tab-panel" id="tab-history">
+              <div id="historyList" class="history-list"></div>
+              <div id="historyCode" class="history-code" hidden>
+                <div id="historyCodeHeader" class="history-code-header"></div>
+                <pre id="historyCodeBlock"></pre>
+              </div>
+            </section>
+          </div>
         </div>
-        <section class="tab-panel active" id="tab-output">
-          <div id="runSummary" class="run-summary muted">No run yet.</div>
-          <h3>stdout</h3>
-          <pre id="stdoutBlock"></pre>
-          <h3 id="stderrTitle">stderr</h3>
-          <pre id="stderrBlock"></pre>
-        </section>
-        <section class="tab-panel" id="tab-notes">
-          <textarea id="notesArea" placeholder="Approach, edge cases, complexity, mistakes to revisit..."></textarea>
-          <div class="panel-actions">
-            <button id="saveNotesButton">Save Notes</button>
-          </div>
-        </section>
-        <section class="tab-panel" id="tab-history">
-          <div id="historyList" class="history-list"></div>
-          <div id="historyCode" class="history-code" hidden>
-            <div id="historyCodeHeader" class="history-code-header"></div>
-            <pre id="historyCodeBlock"></pre>
-          </div>
-        </section>
       </aside>
     </div>
     <div id="toast" class="toast"></div>

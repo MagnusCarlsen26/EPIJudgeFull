@@ -52,17 +52,35 @@ async function messageFrom(response) {
   }
 }
 
+const rightPanelLayout = {
+  defaultWidth: 360,
+  minWidth: 240,
+  maxWidth: 720,
+  resizeBreakpoint: 1120,
+};
+
+const SUPPORTED_LANGUAGES = ["python", "cpp", "java"];
+const MONACO_LANGUAGES = { python: "python", cpp: "cpp", java: "java" };
+const LANGUAGE_LABELS = { python: "Python", cpp: "C++", java: "Java" };
+
 const state = {
+  catalogChapters: [],
   chapters: [],
   manifest: null,
   problemState: {},
+  problemCards: [],
+  problemCardByJudgeId: {},
+  language: "python",
   session: {
     lastProblemId: null,
+    language: "python",
     filters: { chapter: null, status: "all", query: "" },
     sort: "book_order",
     theme: "system",
     sidebarCollapsed: false,
     rightPanelCollapsed: false,
+    rightPanelWidth: rightPanelLayout.defaultWidth,
+    problemPanelCollapsed: false,
     expandedChapterIds: [],
   },
   current: null,
@@ -83,7 +101,8 @@ const state = {
 const storageKeys = {
   session: "epi.session.v2",
   problemState: "epi.problemState.v2",
-  codePrefix: "epi.code.v2.",
+  codePrefixV2: "epi.code.v2.",
+  codePrefixV3: "epi.code.v3.",
 };
 
 const el = {};
@@ -110,6 +129,7 @@ async function init() {
   renderStaticIcons();
   applyTheme(state.session.theme);
   bindEvents();
+  setupRightPanelResize();
   await setupEditor();
   await loadInitialData();
 }
@@ -121,7 +141,9 @@ function bindElements() {
     "resetViewButton", "runSampleButton", "runButton", "editor", "fallbackEditor", "rightTabs", "runSummary",
     "stdoutBlock", "stderrBlock", "stderrTitle", "notesArea", "saveNotesButton", "historyList",
     "historyCode", "historyCodeHeader", "historyCodeBlock", "toast", "sidebar", "mobileProblems", "themeButton", "sidebarToggle", "sidebarReopen",
-    "rightPanel", "rightPanelToggle", "rightPanelReopen",
+    "rightPanel", "rightPanelToggle", "rightPanelReopen", "rightPanelResizeHandle",
+    "problemPanel", "problemPanelToggle", "problemPanelBody", "problemSpoilers",
+    "languageTabs",
   ]) {
     el[id] = document.getElementById(id);
   }
@@ -133,6 +155,11 @@ function bindEvents() {
     const button = event.target.closest("button[data-status]");
     if (!button) return;
     updateFilters({ status: button.dataset.status });
+  });
+  el.languageTabs.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-language]");
+    if (!button) return;
+    switchLanguage(button.dataset.language);
   });
   el.rightTabs.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-tab]");
@@ -151,6 +178,7 @@ function bindEvents() {
   el.sidebarReopen.addEventListener("click", () => setSidebarCollapsed(false));
   el.rightPanelToggle.addEventListener("click", () => setRightPanelCollapsed(!state.session.rightPanelCollapsed));
   el.rightPanelReopen.addEventListener("click", () => setRightPanelCollapsed(false));
+  el.problemPanelToggle.addEventListener("click", () => setProblemPanelCollapsed(!state.session.problemPanelCollapsed));
   el.themeButton.addEventListener("click", cycleTheme);
   systemTheme.addEventListener("change", () => {
     if (state.session.theme === "system") applyTheme("system");
@@ -180,12 +208,20 @@ async function loadInitialData() {
     const manifest = await cdn.get("/data/manifest.json");
     const problems = await cdn.get(manifest.problems);
     state.manifest = manifest;
-    state.problemState = readJson(storageKeys.problemState, {});
+    state.problemState = migrateProblemState(readJson(storageKeys.problemState, {}));
     state.session = normalizeSession(readJson(storageKeys.session, state.session));
-    state.chapters = mergeProblemState(problems.chapters, state.problemState);
+    state.language = SUPPORTED_LANGUAGES.includes(state.session.language) ? state.session.language : "python";
+    state.session.language = state.language;
+    state.catalogChapters = problems.chapters;
+    refreshChapters();
+    await loadProblemCards(manifest);
+    setMonacoLanguage(state.language);
+    syncLanguageControls();
     applyTheme(state.session.theme);
     applySidebarState();
     applyRightPanelState();
+    applyRightPanelWidth();
+    applyProblemPanelState();
     migrateChapterFilter();
     initializeExpandedChapters();
     syncFilterControls();
@@ -307,17 +343,18 @@ function renderProblemButton(problem) {
 }
 
 async function openProblem(problemId, options = {}) {
-  if (!options.force && isDirty() && !confirm("Discard unsaved editor changes and switch problems?")) return;
+  if (!options.force && !options.skipConfirm && isDirty() && !confirm("Discard unsaved editor changes and switch problems?")) return;
   try {
-    const boilerplate = await loadBoilerplate(problemId);
+    const boilerplate = await loadBoilerplate(problemId, state.language);
     const staticProblem = findProblem(problemId);
     const localState = problemLocalState(problemId);
-    const code = readCode(problemId) ?? boilerplate;
+    const code = readCode(problemId, state.language) ?? boilerplate;
     state.current = { ...staticProblem, ...localState, code, boilerplate };
     state.savedCode = code;
     state.lastRun = null;
     state.selectedAttemptId = null;
     setEditorValue(code);
+    setMonacoLanguage(state.language);
     state.session.lastProblemId = problemId;
     ensureProblemChapterExpanded(problemId);
     renderCurrentProblem();
@@ -336,6 +373,7 @@ function renderCurrentProblem() {
   el.progressBadge.textContent = `${problem.passed} / ${problem.total}`;
   renderStarButton(problem.bookmarked);
   el.notesArea.value = problem.notes || "";
+  renderProblemCard(problem.id);
   renderHistory(problem.attempts || []);
   clearOutput();
   updateDirtyState();
@@ -348,9 +386,11 @@ function renderHistory(attempts) {
     const result = formatResult(attempt.result);
     const failed = isFailedAttempt(attempt);
     const selected = id && id === state.selectedAttemptId ? " active" : "";
+    const langLabel = LANGUAGE_LABELS[attempt.language] || attempt.language || "";
+    const langBadge = langLabel ? `<span class="history-lang">${escapeHtml(langLabel)}</span> · ` : "";
     return `
       <button class="history-row ${escapeHtml(attempt.result || "run")}${failed ? " failed-state" : ""}${selected}" data-attempt-id="${escapeHtml(id)}" data-attempt-index="${index}">
-        <strong>${escapeHtml(result)} · ${attempt.passed} / ${attempt.total}</strong>
+        <strong>${langBadge}${escapeHtml(result)} · ${attempt.passed} / ${attempt.total}</strong>
         <span>${escapeHtml(formatAttemptTime(attempt.ranAt))} · exit ${attempt.exitCode} · ${attempt.durationMs}ms</span>
       </button>
     `;
@@ -386,7 +426,7 @@ async function runTests(scope = "all") {
   try {
     const code = getEditorValue();
     await persistCode(code);
-    const created = await api.post("/api/runs", { problemId: state.current.id, language: "python", code, scope });
+    const created = await api.post("/api/runs", { problemId: state.current.id, language: state.language, code, scope });
     renderRunPending(scope, created.status);
     const result = await pollRun(created.runId);
     state.savedCode = code;
@@ -415,21 +455,19 @@ function refreshAfterRun(problemId, result, code) {
     exitCode: result.exitCode,
     durationMs: result.durationMs,
     result: result.verdict,
+    language: state.language,
     code,
   };
   const attempts = [...(local.attempts || []), attempt].slice(-25);
-  state.problemState[problemId] = {
-    ...local,
+  updateProblemLocalState(problemId, {
     attempts,
     status: result.verdict === "passed" ? "solved" : "in_progress",
     passed: result.passed,
     total: result.total,
     lastRunAt: attempt.ranAt,
-  };
-  writeJson(storageKeys.problemState, state.problemState);
-  state.chapters = mergeProblemState(state.chapters, state.problemState);
+  });
   const staticProblem = findProblem(problemId);
-  state.current = { ...staticProblem, ...state.problemState[problemId], code: state.savedCode, boilerplate: state.current.boilerplate };
+  state.current = { ...staticProblem, ...problemLocalState(problemId), code: state.savedCode, boilerplate: state.current.boilerplate };
   renderProblemList();
   renderCurrentProblem();
   if (state.lastRun) renderRunOutput(state.lastRun);
@@ -503,7 +541,38 @@ function syncFilterControls() {
   el.statusTabs.querySelectorAll("button").forEach((button) => {
     button.classList.toggle("active", button.dataset.status === state.session.filters.status);
   });
+  syncLanguageControls();
   updateThemeButtons();
+}
+
+function syncLanguageControls() {
+  if (!el.languageTabs) return;
+  el.languageTabs.querySelectorAll("button[data-language]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.language === state.language);
+  });
+}
+
+async function switchLanguage(nextLang) {
+  if (!SUPPORTED_LANGUAGES.includes(nextLang) || nextLang === state.language) return;
+  if (isDirty()) await runAutosave();
+  state.language = nextLang;
+  state.session.language = nextLang;
+  persistSession();
+  syncLanguageControls();
+  refreshChapters();
+  if (state.current) {
+    await openProblem(state.current.id, { force: true, skipConfirm: true });
+  } else {
+    setMonacoLanguage(nextLang);
+    renderProblemList();
+  }
+}
+
+function setMonacoLanguage(language) {
+  if (state.editorKind !== "monaco" || !window.monaco || !state.editor) return;
+  const model = state.editor.getModel();
+  if (!model) return;
+  monaco.editor.setModelLanguage(model, MONACO_LANGUAGES[language] || "python");
 }
 
 function renderStaticIcons() {
@@ -528,14 +597,21 @@ function normalizeSession(session) {
     theme: "system",
     sidebarCollapsed: false,
     rightPanelCollapsed: false,
+    rightPanelWidth: rightPanelLayout.defaultWidth,
+    problemPanelCollapsed: false,
     expandedChapterIds: [],
     ...session,
   };
   next.filters = { chapter: null, status: "all", query: "", ...(session && session.filters) };
+  if (session && typeof session.problemPanelCollapsed === "boolean") {
+    next.problemPanelCollapsed = session.problemPanelCollapsed;
+  }
+  next.rightPanelWidth = clampRightPanelWidth(next.rightPanelWidth);
   if (!["light", "dark", "system"].includes(next.theme)) next.theme = "system";
   if (next.filters.status === "bookmarked") next.filters.status = "starred";
   if (!["all", "starred", "in_progress", "solved"].includes(next.filters.status)) next.filters.status = "all";
   if (!Array.isArray(next.expandedChapterIds)) next.expandedChapterIds = [];
+  if (!SUPPORTED_LANGUAGES.includes(next.language)) next.language = "python";
   return next;
 }
 
@@ -585,15 +661,116 @@ function setSidebarCollapsed(collapsed, options = {}) {
   if (options.persist !== false) persistSession();
 }
 
+function clampRightPanelWidth(width) {
+  const numeric = Number(width);
+  if (!Number.isFinite(numeric)) return rightPanelLayout.defaultWidth;
+  return Math.min(rightPanelLayout.maxWidth, Math.max(rightPanelLayout.minWidth, Math.round(numeric)));
+}
+
+function rightPanelResizeEnabled() {
+  return window.innerWidth > rightPanelLayout.resizeBreakpoint && !state.session.rightPanelCollapsed;
+}
+
+function applyRightPanelWidth(width = state.session.rightPanelWidth) {
+  const nextWidth = clampRightPanelWidth(width);
+  state.session.rightPanelWidth = nextWidth;
+  if (!el.appShell) return;
+  if (rightPanelResizeEnabled()) {
+    el.appShell.style.setProperty("--right-panel-width", `${nextWidth}px`);
+  } else {
+    el.appShell.style.removeProperty("--right-panel-width");
+  }
+}
+
+function setRightPanelWidth(width, options = {}) {
+  applyRightPanelWidth(width);
+  if (options.persist !== false) persistSession();
+}
+
 function applyRightPanelState() {
   el.appShell.classList.toggle("right-panel-collapsed", Boolean(state.session.rightPanelCollapsed));
-  el.rightPanelToggle.title = state.session.rightPanelCollapsed ? "Open output panel" : "Collapse output panel";
+  el.rightPanelToggle.title = state.session.rightPanelCollapsed ? "Open panel" : "Collapse panel";
   el.rightPanelToggle.setAttribute("aria-label", el.rightPanelToggle.title);
+  applyRightPanelWidth();
 }
 
 function setRightPanelCollapsed(collapsed, options = {}) {
   state.session.rightPanelCollapsed = Boolean(collapsed);
   applyRightPanelState();
+  if (options.persist !== false) persistSession();
+}
+
+function setupRightPanelResize() {
+  if (!el.rightPanelResizeHandle) return;
+
+  let dragging = false;
+  let activePointerId = null;
+
+  const finishResize = (persist) => {
+    if (!dragging) return;
+    dragging = false;
+    activePointerId = null;
+    document.body.classList.remove("right-panel-resizing");
+    if (persist) persistSession();
+  };
+
+  const resizeFromClientX = (clientX) => {
+    const shellRect = el.appShell.getBoundingClientRect();
+    setRightPanelWidth(shellRect.right - clientX, { persist: false });
+  };
+
+  el.rightPanelResizeHandle.addEventListener("pointerdown", (event) => {
+    if (!rightPanelResizeEnabled() || event.button !== 0) return;
+    event.preventDefault();
+    dragging = true;
+    activePointerId = event.pointerId;
+    document.body.classList.add("right-panel-resizing");
+    el.rightPanelResizeHandle.setPointerCapture(event.pointerId);
+    resizeFromClientX(event.clientX);
+  });
+
+  el.rightPanelResizeHandle.addEventListener("pointermove", (event) => {
+    if (!dragging || event.pointerId !== activePointerId) return;
+    event.preventDefault();
+    resizeFromClientX(event.clientX);
+  });
+
+  el.rightPanelResizeHandle.addEventListener("pointerup", (event) => {
+    if (event.pointerId !== activePointerId) return;
+    finishResize(true);
+  });
+
+  el.rightPanelResizeHandle.addEventListener("pointercancel", (event) => {
+    if (event.pointerId !== activePointerId) return;
+    finishResize(false);
+  });
+
+  el.rightPanelResizeHandle.addEventListener("keydown", (event) => {
+    if (!rightPanelResizeEnabled()) return;
+    const step = event.shiftKey ? 40 : 16;
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      setRightPanelWidth(state.session.rightPanelWidth + step);
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      setRightPanelWidth(state.session.rightPanelWidth - step);
+    }
+  });
+
+  window.addEventListener("resize", () => applyRightPanelWidth());
+}
+
+function applyProblemPanelState() {
+  if (!el.problemPanel) return;
+  const collapsed = Boolean(state.session.problemPanelCollapsed);
+  el.problemPanel.classList.toggle("collapsed", collapsed);
+  el.problemPanelToggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  el.problemPanelToggle.title = collapsed ? "Expand question" : "Collapse question";
+}
+
+function setProblemPanelCollapsed(collapsed, options = {}) {
+  state.session.problemPanelCollapsed = Boolean(collapsed);
+  applyProblemPanelState();
   if (options.persist !== false) persistSession();
 }
 
@@ -673,8 +850,8 @@ async function resetEditorView() {
   state.resetVersion += 1;
   const resetVersion = state.resetVersion;
   try {
-    const code = state.current.boilerplate ?? await loadBoilerplate(state.current.id);
-    writeCode(state.current.id, code);
+    const code = state.current.boilerplate ?? await loadBoilerplate(state.current.id, state.language);
+    writeCode(state.current.id, code, state.language);
     if (resetVersion !== state.resetVersion) return;
     state.savedCode = code;
     state.current.code = code;
@@ -764,7 +941,7 @@ async function persistCode(code, resetVersion = state.resetVersion) {
   el.dirtyState.textContent = "Saving...";
   el.dirtyState.dataset.state = "saving";
   try {
-    writeCode(state.current.id, code);
+    writeCode(state.current.id, code, state.language);
     if (resetVersion !== state.resetVersion) return;
     state.savedCode = code;
     updateDirtyState("Saved");
@@ -779,20 +956,59 @@ function findProblem(problemId) {
 }
 
 async function refreshProblemState() {
-  state.problemState = readJson(storageKeys.problemState, {});
-  state.chapters = mergeProblemState(state.chapters, state.problemState);
+  state.problemState = migrateProblemState(readJson(storageKeys.problemState, {}));
+  refreshChapters();
+}
+
+function refreshChapters() {
+  state.chapters = mergeProblemState(state.catalogChapters, state.problemState);
+}
+
+function migrateProblemState(problemState) {
+  const next = {};
+  for (const [problemId, entry] of Object.entries(problemState || {})) {
+    if (entry.languages) {
+      next[problemId] = entry;
+      continue;
+    }
+    const { bookmarked, notes, status, passed, total, attempts, lastRunAt } = entry;
+    next[problemId] = {
+      bookmarked: Boolean(bookmarked),
+      notes: notes || "",
+      languages: {
+        python: {
+          status: status || "not_started",
+          passed: passed || 0,
+          total: total || 0,
+          attempts: attempts || [],
+          lastRunAt: lastRunAt || null,
+        },
+      },
+    };
+  }
+  return next;
 }
 
 function mergeProblemState(chapters, problemState) {
+  const lang = state.language;
   return chapters.map((chapter) => ({
     ...chapter,
     problems: chapter.problems.map((problem) => {
       const dynamic = problemState[problem.id] || {};
+      const langDynamic = dynamic.languages?.[lang] || {};
+      const staticLang = problem.languages?.[lang];
+      const passed = langDynamic.passed ?? staticLang?.passed ?? problem.passed ?? 0;
+      const total = langDynamic.total ?? staticLang?.total ?? problem.total ?? 0;
       return {
         ...problem,
-        ...dynamic,
-        status: dynamic.status || statusForStaticProblem(problem),
+        filename: staticLang?.filename || problem.filename,
         bookmarked: Boolean(dynamic.bookmarked),
+        notes: dynamic.notes || "",
+        passed,
+        total,
+        status: langDynamic.status || statusForStaticProblem({ passed, total }),
+        attempts: langDynamic.attempts || [],
+        lastRunAt: langDynamic.lastRunAt || null,
       };
     }),
   }));
@@ -804,9 +1020,14 @@ function statusForStaticProblem(problem) {
   return "not_started";
 }
 
-async function loadBoilerplate(problemId) {
-  const path = state.manifest?.boilerplateByProblem?.[problemId] || state.manifest?.boilerplate?.python?.[problemId];
-  if (!path) throw new Error("Could not find starter code for this problem.");
+async function loadBoilerplate(problemId, language = state.language) {
+  const problem = state.catalogChapters
+    .flatMap((chapter) => chapter.problems)
+    .find((item) => item.id === problemId);
+  const path =
+    problem?.languages?.[language]?.boilerplatePath ||
+    state.manifest?.boilerplate?.[language]?.[problemId];
+  if (!path) throw new Error(`No starter code for ${LANGUAGE_LABELS[language] || language}.`);
   return cdn.text(path);
 }
 
@@ -840,6 +1061,7 @@ function formatResult(result) {
   const labels = {
     passed: "Passed",
     failed: "Failed",
+    compile_error: "Compile error",
     runtime_error: "Runtime error",
     timeout: "Timeout",
   };
@@ -847,7 +1069,7 @@ function formatResult(result) {
 }
 
 function isFailedAttempt(attempt) {
-  return ["failed", "runtime_error", "timeout"].includes(attempt.result) || Number(attempt.exitCode) !== 0;
+  return ["failed", "compile_error", "runtime_error", "timeout"].includes(attempt.result) || Number(attempt.exitCode) !== 0;
 }
 
 function readJson(key, fallback) {
@@ -863,22 +1085,58 @@ function writeJson(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
-function readCode(problemId) {
-  return localStorage.getItem(`${storageKeys.codePrefix}${problemId}`);
+function codeStorageKey(problemId, language = state.language) {
+  return `${storageKeys.codePrefixV3}${problemId}.${language}`;
 }
 
-function writeCode(problemId, code) {
-  localStorage.setItem(`${storageKeys.codePrefix}${problemId}`, code);
+function readCode(problemId, language = state.language) {
+  const v3Key = codeStorageKey(problemId, language);
+  const value = localStorage.getItem(v3Key);
+  if (value !== null) return value;
+  if (language === "python") {
+    const legacy = localStorage.getItem(`${storageKeys.codePrefixV2}${problemId}`);
+    if (legacy !== null) {
+      localStorage.setItem(v3Key, legacy);
+      return legacy;
+    }
+  }
+  return null;
+}
+
+function writeCode(problemId, code, language = state.language) {
+  localStorage.setItem(codeStorageKey(problemId, language), code);
 }
 
 function problemLocalState(problemId) {
-  return state.problemState[problemId] || {};
+  const entry = state.problemState[problemId] || {};
+  const langState = entry.languages?.[state.language] || {};
+  return {
+    bookmarked: Boolean(entry.bookmarked),
+    notes: entry.notes || "",
+    ...langState,
+  };
 }
 
 function updateProblemLocalState(problemId, values) {
-  state.problemState[problemId] = { ...problemLocalState(problemId), ...values };
+  const entry = state.problemState[problemId] || { languages: {} };
+  const shared = {};
+  const langValues = {};
+  for (const [key, value] of Object.entries(values)) {
+    if (key === "bookmarked" || key === "notes") shared[key] = value;
+    else langValues[key] = value;
+  }
+  const next = {
+    bookmarked: entry.bookmarked,
+    notes: entry.notes || "",
+    languages: { ...(entry.languages || {}) },
+    ...shared,
+  };
+  if (Object.keys(langValues).length) {
+    next.languages[state.language] = { ...(entry.languages?.[state.language] || {}), ...langValues };
+  }
+  state.problemState[problemId] = next;
   writeJson(storageKeys.problemState, state.problemState);
-  state.chapters = mergeProblemState(state.chapters, state.problemState);
+  refreshChapters();
 }
 
 function delay(ms) {
@@ -892,4 +1150,153 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+async function loadProblemCards(manifest) {
+  const paths = [
+    manifest?.problemCards,
+    manifest?.problemCardsStable,
+    "/data/epi_problem_cards.json",
+  ].filter(Boolean);
+  const seen = new Set();
+  for (const path of paths) {
+    if (seen.has(path)) continue;
+    seen.add(path);
+    try {
+      const cards = await cdn.get(path);
+      if (Array.isArray(cards) && cards.length) {
+        state.problemCards = cards;
+        state.problemCardByJudgeId = buildProblemCardIndex(cards);
+        return;
+      }
+    } catch {
+      // Try the next known cards path.
+    }
+  }
+  state.problemCards = [];
+  state.problemCardByJudgeId = {};
+}
+
+function normalizeTitle(title) {
+  return String(title ?? "")
+    .replace(/^\d+\.\d+\s+/, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function buildProblemCardIndex(cards) {
+  const byNorm = new Map();
+  for (const card of cards) {
+    byNorm.set(normalizeTitle(card.title), card);
+  }
+  const byJudgeId = {};
+  for (const chapter of state.chapters) {
+    for (const problem of chapter.problems) {
+      const card = byNorm.get(normalizeTitle(problem.title));
+      if (card) byJudgeId[problem.id] = card;
+    }
+  }
+  return byJudgeId;
+}
+
+function rewriteFigurePath(assetPath) {
+  if (!assetPath) return "";
+  if (assetPath.startsWith("/")) return assetPath;
+  return assetPath.replace(/^data\//, "/data/");
+}
+
+function renderProblemFigures(card) {
+  const figures = [...(card.figures || [])]
+    .sort((left, right) => {
+      const pageDelta = (left.pdf_page || 0) - (right.pdf_page || 0);
+      if (pageDelta) return pageDelta;
+      return (left.bbox?.y_min || 0) - (right.bbox?.y_min || 0);
+    })
+    .filter((figure) => figure.asset_path);
+  if (!figures.length) return "";
+  return figures.map((figure) => {
+    const src = rewriteFigurePath(figure.asset_path);
+    const caption = `${figure.label || "Figure"}: ${figure.caption || ""}`.trim();
+    return `
+      <figure class="problem-figure">
+        <img src="${escapeHtml(src)}" alt="${escapeHtml(caption)}" loading="lazy">
+        ${caption ? `<figcaption>${escapeHtml(caption)}</figcaption>` : ""}
+      </figure>
+    `;
+  }).join("");
+}
+
+function renderProblemSolutionParts(card) {
+  if (Array.isArray(card.solution_parts) && card.solution_parts.length) {
+    return card.solution_parts.map((part) => {
+      if (part.type === "code") {
+        return `<div class="problem-solution-part problem-code"><pre><code>${escapeHtml(part.code || "")}</code></pre></div>`;
+      }
+      return `<div class="problem-solution-part"><div class="problem-text">${escapeHtml(part.text || "")}</div></div>`;
+    }).join("");
+  }
+  const fallback = [];
+  if (card.solution) {
+    fallback.push(`<div class="problem-solution-part"><div class="problem-text">${escapeHtml(card.solution)}</div></div>`);
+  }
+  if (card.code_blocks?.length) {
+    fallback.push(...card.code_blocks.map((block) =>
+      `<div class="problem-solution-part problem-code"><pre><code>${escapeHtml(block.code || "")}</code></pre></div>`,
+    ));
+  }
+  return fallback.join("");
+}
+
+function renderProblemCard(problemId) {
+  if (!el.problemPanelBody) return;
+  const card = state.problemCardByJudgeId?.[problemId];
+  if (!card) {
+    el.problemPanelBody.innerHTML = `<p class="problem-empty">No book description available for this problem.</p>`;
+    if (el.problemSpoilers) el.problemSpoilers.innerHTML = "";
+    return;
+  }
+
+  const tags = (card.tags || []).map((tag) => `<span class="problem-badge">${escapeHtml(tag)}</span>`).join("");
+  const complexity = Object.keys(card.complexity || {}).length
+    ? Object.entries(card.complexity).map(([key, value]) =>
+      `<span class="problem-complexity-item"><strong>${escapeHtml(key)}:</strong> ${escapeHtml(value)}</span>`,
+    ).join("")
+    : "";
+  const meta = [
+    card.book_page_start != null ? `Book pp. ${card.book_page_start}–${card.book_page_end}` : "",
+    card.pdf_page_start != null ? `PDF pp. ${card.pdf_page_start}–${card.pdf_page_end}` : "",
+  ].filter(Boolean).join(" · ");
+  const figures = renderProblemFigures(card);
+  const hint = card.hint?.trim();
+  const solutionParts = renderProblemSolutionParts(card);
+
+  el.problemPanelBody.innerHTML = `
+    <div class="problem-card">
+      ${meta ? `<div class="problem-meta-line">${escapeHtml(meta)}</div>` : ""}
+      ${tags ? `<div class="problem-tags">${tags}</div>` : ""}
+      ${complexity ? `<div class="problem-complexity">${complexity}</div>` : ""}
+      <div class="problem-statement problem-text">${escapeHtml(card.statement || "")}</div>
+      ${figures}
+    </div>
+  `;
+
+  el.problemPanelBody.querySelectorAll(".problem-figure img").forEach((img) => {
+    img.addEventListener("error", () => { img.style.display = "none"; });
+  });
+
+  if (!el.problemSpoilers) return;
+  el.problemSpoilers.innerHTML = [
+    hint ? `
+      <details class="problem-section">
+        <summary>Hint</summary>
+        <div class="problem-text">${escapeHtml(hint)}</div>
+      </details>
+    ` : "",
+    solutionParts ? `
+      <details class="problem-section">
+        <summary>Solution</summary>
+        <div class="problem-solution">${solutionParts}</div>
+      </details>
+    ` : "",
+  ].filter(Boolean).join("");
 }

@@ -5,7 +5,7 @@
 - [ ] Check whether the Practice UI Run Tests functionality works end to end.
 
 ## Enhancement
-- [ ] Support other languages also
+- [x] Support other languages also
 - [ ] Make the Practice UI autosave indicator more subtle.
 - [ ] Add shareable links that open directly to a problem.
 - [ ] AI Prompt.
