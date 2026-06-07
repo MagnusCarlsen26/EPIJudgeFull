@@ -29,9 +29,46 @@ wait_for_url() {
   return 1
 }
 
+ensure_file_from_example() {
+  local dest="$1"
+  local example="$2"
+
+  if [[ ! -f "$dest" ]]; then
+    cp "$example" "$dest"
+    echo "Created ${dest#$ROOT_DIR/} from $(basename "$example")"
+  fi
+}
+
+ensure_npm_install() {
+  local dir="$1"
+  local name="$2"
+
+  if [[ ! -d "$dir/node_modules" ]]; then
+    echo "Installing $name dependencies..."
+    (cd "$dir" && npm install)
+  fi
+}
+
+echo "Setting up..."
+ensure_file_from_example "$ROOT_DIR/backend/.env" "$ROOT_DIR/backend/.env.example"
+ensure_file_from_example "$ROOT_DIR/judge0/judge0.conf" "$ROOT_DIR/judge0/judge0.conf.example"
+ensure_npm_install "$ROOT_DIR/backend" "backend"
+ensure_npm_install "$ROOT_DIR/frontend" "frontend"
+
 echo "Starting Judge0..."
-(cd "$ROOT_DIR/judge0" && docker compose up -d)
-wait_for_url "http://127.0.0.1:2358/languages" "Judge0"
+JUDGE0_DIR="$ROOT_DIR/judge0"
+
+(cd "$JUDGE0_DIR" && docker compose up -d)
+if ! wait_for_url "http://127.0.0.1:2358/languages" "Judge0" 120; then
+  if (cd "$JUDGE0_DIR" && docker compose logs --tail=20 server db 2>&1) | grep -q 'password authentication failed'; then
+    echo >&2
+    echo "Judge0 cannot connect to Postgres. This usually means the Docker volume" >&2
+    echo "was created with a different password than judge0/judge0.conf." >&2
+    echo "Reset the local Judge0 database and try again:" >&2
+    echo "  cd judge0 && docker compose down -v && docker compose up -d" >&2
+  fi
+  exit 1
+fi
 
 if [[ ! -f "$ROOT_DIR/frontend/public/data/manifest.json" ]]; then
   echo "Building frontend data..."
