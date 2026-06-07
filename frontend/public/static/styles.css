@@ -113,17 +113,26 @@ svg .fill {
   grid-template-columns: 0 minmax(0, 1fr) 360px;
 }
 
+.app-shell.right-panel-collapsed {
+  grid-template-columns: 320px minmax(0, 1fr) 0;
+}
+
+.app-shell.sidebar-collapsed.right-panel-collapsed {
+  grid-template-columns: 0 minmax(0, 1fr) 0;
+}
+
 .sidebar, .right-panel {
   min-width: 0;
+  overflow: hidden;
   background: var(--panel);
   border-right: 1px solid var(--line);
 }
 
-.sidebar {
-  overflow: hidden;
+.app-shell.sidebar-collapsed .sidebar > * {
+  visibility: hidden;
 }
 
-.app-shell.sidebar-collapsed .sidebar > * {
+.app-shell.right-panel-collapsed .right-panel > * {
   visibility: hidden;
 }
 
@@ -132,6 +141,25 @@ svg .fill {
   border-left: 1px solid var(--line);
   display: flex;
   flex-direction: column;
+}
+
+.right-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.right-panel-header #rightPanelToggle {
+  flex-shrink: 0;
+}
+
+.right-panel-header .tabs {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border-bottom: 0;
 }
 
 .brand {
@@ -331,6 +359,7 @@ svg .fill {
 }
 
 .workspace {
+  position: relative;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -411,6 +440,21 @@ svg .fill {
 }
 
 .app-shell.sidebar-collapsed .sidebar-reopen {
+  display: inline-flex;
+}
+
+.right-panel-reopen {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  z-index: 5;
+  display: none;
+  transform: translate(50%, -50%);
+  background: var(--panel-strong);
+  box-shadow: var(--shadow);
+}
+
+.app-shell.right-panel-collapsed .right-panel-reopen {
   display: inline-flex;
 }
 
@@ -638,10 +682,24 @@ pre {
   .app-shell.sidebar-collapsed {
     grid-template-columns: 0 minmax(0, 1fr);
   }
+  .app-shell.right-panel-collapsed {
+    grid-template-columns: 300px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) 0;
+  }
+  .app-shell.sidebar-collapsed.right-panel-collapsed {
+    grid-template-columns: 0 minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) 0;
+  }
   .right-panel {
     grid-column: 2;
     border-left: 0;
     border-top: 1px solid var(--line);
+  }
+  .right-panel-reopen {
+    top: auto;
+    bottom: 12px;
+    right: 12px;
+    transform: none;
   }
 }
 
@@ -664,7 +722,9 @@ pre {
     visibility: visible;
   }
   .sidebar-reopen,
-  .app-shell.sidebar-collapsed .sidebar-reopen {
+  .app-shell.sidebar-collapsed .sidebar-reopen,
+  .right-panel-reopen,
+  .app-shell.right-panel-collapsed .right-panel-reopen {
     display: none;
   }
   .sidebar.open { display: block; }

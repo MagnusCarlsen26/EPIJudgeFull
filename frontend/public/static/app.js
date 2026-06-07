@@ -62,6 +62,7 @@ const state = {
     sort: "book_order",
     theme: "system",
     sidebarCollapsed: false,
+    rightPanelCollapsed: false,
     expandedChapterIds: [],
   },
   current: null,
@@ -120,6 +121,7 @@ function bindElements() {
     "resetViewButton", "runSampleButton", "runButton", "editor", "fallbackEditor", "rightTabs", "runSummary",
     "stdoutBlock", "stderrBlock", "stderrTitle", "notesArea", "saveNotesButton", "historyList",
     "historyCode", "historyCodeHeader", "historyCodeBlock", "toast", "sidebar", "mobileProblems", "themeButton", "sidebarToggle", "sidebarReopen",
+    "rightPanel", "rightPanelToggle", "rightPanelReopen",
   ]) {
     el[id] = document.getElementById(id);
   }
@@ -147,6 +149,8 @@ function bindEvents() {
   });
   el.sidebarToggle.addEventListener("click", () => setSidebarCollapsed(!state.session.sidebarCollapsed));
   el.sidebarReopen.addEventListener("click", () => setSidebarCollapsed(false));
+  el.rightPanelToggle.addEventListener("click", () => setRightPanelCollapsed(!state.session.rightPanelCollapsed));
+  el.rightPanelReopen.addEventListener("click", () => setRightPanelCollapsed(false));
   el.themeButton.addEventListener("click", cycleTheme);
   systemTheme.addEventListener("change", () => {
     if (state.session.theme === "system") applyTheme("system");
@@ -181,6 +185,7 @@ async function loadInitialData() {
     state.chapters = mergeProblemState(problems.chapters, state.problemState);
     applyTheme(state.session.theme);
     applySidebarState();
+    applyRightPanelState();
     migrateChapterFilter();
     initializeExpandedChapters();
     syncFilterControls();
@@ -522,6 +527,7 @@ function normalizeSession(session) {
     sort: "book_order",
     theme: "system",
     sidebarCollapsed: false,
+    rightPanelCollapsed: false,
     expandedChapterIds: [],
     ...session,
   };
@@ -576,6 +582,18 @@ function setSidebarCollapsed(collapsed, options = {}) {
   state.session.sidebarCollapsed = Boolean(collapsed);
   if (state.session.sidebarCollapsed) el.sidebar.classList.remove("open");
   applySidebarState();
+  if (options.persist !== false) persistSession();
+}
+
+function applyRightPanelState() {
+  el.appShell.classList.toggle("right-panel-collapsed", Boolean(state.session.rightPanelCollapsed));
+  el.rightPanelToggle.title = state.session.rightPanelCollapsed ? "Open output panel" : "Collapse output panel";
+  el.rightPanelToggle.setAttribute("aria-label", el.rightPanelToggle.title);
+}
+
+function setRightPanelCollapsed(collapsed, options = {}) {
+  state.session.rightPanelCollapsed = Boolean(collapsed);
+  applyRightPanelState();
   if (options.persist !== false) persistSession();
 }
 

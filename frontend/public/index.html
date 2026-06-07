@@ -37,6 +37,9 @@
       </aside>
 
       <main class="workspace">
+        <button id="rightPanelReopen" class="right-panel-reopen icon-button" title="Open output panel" aria-label="Open output panel">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/><path d="M4 4h16v16H4z"/></svg>
+        </button>
         <header class="topbar">
           <button id="mobileProblems" class="mobile-only">Problems</button>
           <div>
@@ -60,11 +63,16 @@
         </section>
       </main>
 
-      <aside class="right-panel">
-        <div class="tabs" id="rightTabs">
-          <button data-tab="output" class="active">Output</button>
-          <button data-tab="notes">Notes</button>
-          <button data-tab="history">History</button>
+      <aside class="right-panel" id="rightPanel">
+        <div class="right-panel-header">
+          <button id="rightPanelToggle" class="icon-button" title="Collapse output panel" aria-label="Collapse output panel">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/><path d="M4 4h16v16H4z"/></svg>
+          </button>
+          <div class="tabs" id="rightTabs">
+            <button data-tab="output" class="active">Output</button>
+            <button data-tab="notes">Notes</button>
+            <button data-tab="history">History</button>
+          </div>
         </div>
         <section class="tab-panel active" id="tab-output">
           <div id="runSummary" class="run-summary muted">No run yet.</div>
