@@ -77,6 +77,7 @@ const state = {
     filters: { chapter: null, status: "all", query: "" },
     sort: "book_order",
     theme: "system",
+    vimMode: false,
     sidebarCollapsed: false,
     rightPanelCollapsed: false,
     rightPanelWidth: rightPanelLayout.defaultWidth,
@@ -88,6 +89,8 @@ const state = {
   running: false,
   editor: null,
   editorKind: "textarea",
+  monacoVim: null,
+  vimModeHandle: null,
   lastRun: null,
   selectedAttemptId: null,
   autosaveTimer: null,
@@ -117,6 +120,7 @@ const icons = {
   sun: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M4.93 4.93l1.41 1.41"/><path d="M17.66 17.66l1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="M4.93 19.07l1.41-1.41"/><path d="M17.66 6.34l1.41-1.41"/></svg>`,
   moon: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5 9 9 0 1 0 20.5 14.5z"/></svg>`,
   monitor: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8"/><path d="M12 16v4"/></svg>`,
+  keyboard: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01"/><path d="M10 10h.01"/><path d="M14 10h.01"/><path d="M18 10h.01"/><path d="M8 14h8"/></svg>`,
   chevron: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>`,
   run: `<svg viewBox="0 0 24 24" aria-hidden="true"><path class="fill" d="M8 5v14l11-7z"/></svg>`,
   running: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/></svg>`,
@@ -140,7 +144,7 @@ function bindElements() {
     "problemChapter", "problemTitle", "starButton", "dirtyState", "progressBadge",
     "resetViewButton", "runSampleButton", "runButton", "editor", "fallbackEditor", "rightTabs", "runSummary",
     "stdoutBlock", "stderrBlock", "stderrTitle", "notesArea", "saveNotesButton", "historyList",
-    "historyCode", "historyCodeHeader", "historyCodeBlock", "toast", "sidebar", "mobileProblems", "themeButton", "sidebarToggle", "sidebarReopen",
+    "historyCode", "historyCodeHeader", "historyCodeBlock", "toast", "sidebar", "mobileProblems", "themeButton", "vimModeButton", "vimStatus", "sidebarToggle", "sidebarReopen",
     "rightPanel", "rightPanelToggle", "rightPanelReopen", "rightPanelResizeHandle",
     "problemPanel", "problemPanelToggle", "problemPanelBody", "problemSpoilers",
     "languageTabs",
@@ -180,6 +184,7 @@ function bindEvents() {
   el.rightPanelReopen.addEventListener("click", () => setRightPanelCollapsed(false));
   el.problemPanelToggle.addEventListener("click", () => setProblemPanelCollapsed(!state.session.problemPanelCollapsed));
   el.themeButton.addEventListener("click", cycleTheme);
+  el.vimModeButton.addEventListener("click", toggleVimMode);
   systemTheme.addEventListener("change", () => {
     if (state.session.theme === "system") applyTheme("system");
   });
@@ -218,6 +223,7 @@ async function loadInitialData() {
     setMonacoLanguage(state.language);
     syncLanguageControls();
     applyTheme(state.session.theme);
+    applyVimMode(state.session.vimMode);
     applySidebarState();
     applyRightPanelState();
     applyRightPanelWidth();
@@ -252,6 +258,7 @@ async function setupEditor() {
     });
     state.editor.onDidChangeModelContent(updateDirtyState);
     state.editorKind = "monaco";
+    applyVimMode(state.session.vimMode);
   } catch {
     el.editor.style.display = "none";
     el.fallbackEditor.style.display = "block";
@@ -262,6 +269,7 @@ async function setupEditor() {
       setPosition: () => {},
     };
     state.editorKind = "textarea";
+    updateVimModeButton();
   }
 }
 
@@ -270,11 +278,34 @@ function loadMonaco() {
     const script = document.createElement("script");
     script.src = "https://cdn.jsdelivr.net/npm/monaco-editor@0.49.0/min/vs/loader.js";
     script.onload = () => {
-      window.require.config({ paths: { vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.49.0/min/vs" } });
-      window.require(["vs/editor/editor.main"], resolve, reject);
+      window.require.config({
+        paths: { vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.49.0/min/vs" },
+      });
+      window.require(["vs/editor/editor.main"], () => {
+        loadMonacoVim().finally(resolve);
+      }, reject);
     };
     script.onerror = reject;
     document.head.appendChild(script);
+  });
+}
+
+function loadMonacoVim() {
+  return new Promise((resolve) => {
+    const vimScript = document.createElement("script");
+    vimScript.src = "https://cdn.jsdelivr.net/npm/monaco-vim@0.4.4/dist/monaco-vim.umd.js";
+    const restoreDefine = window.define;
+    window.define = undefined;
+    const finish = () => {
+      window.define = restoreDefine;
+      resolve();
+    };
+    vimScript.onload = () => {
+      state.monacoVim = window.MonacoVim;
+      finish();
+    };
+    vimScript.onerror = finish;
+    document.head.appendChild(vimScript);
   });
 }
 
@@ -586,7 +617,9 @@ function renderStaticIcons() {
     button.innerHTML = statusIcons[button.dataset.status] || "";
   });
   el.runButton.innerHTML = icons.run;
+  el.vimModeButton.innerHTML = icons.keyboard;
   renderStarButton(false);
+  updateVimModeButton();
 }
 
 function normalizeSession(session) {
@@ -595,6 +628,7 @@ function normalizeSession(session) {
     filters: { chapter: null, status: "all", query: "" },
     sort: "book_order",
     theme: "system",
+    vimMode: false,
     sidebarCollapsed: false,
     rightPanelCollapsed: false,
     rightPanelWidth: rightPanelLayout.defaultWidth,
@@ -602,6 +636,7 @@ function normalizeSession(session) {
     expandedChapterIds: [],
     ...session,
   };
+  next.vimMode = Boolean(next.vimMode);
   next.filters = { chapter: null, status: "all", query: "", ...(session && session.filters) };
   if (session && typeof session.problemPanelCollapsed === "boolean") {
     next.problemPanelCollapsed = session.problemPanelCollapsed;
@@ -646,6 +681,45 @@ function updateThemeButtons() {
   el.themeButton.innerHTML = themeIcons[state.session.theme] || icons.monitor;
   el.themeButton.title = themeLabels[state.session.theme] || themeLabels.system;
   el.themeButton.setAttribute("aria-label", el.themeButton.title);
+}
+
+function applyVimMode(enabled) {
+  if (state.editorKind !== "monaco" || !state.monacoVim) {
+    updateVimModeButton();
+    return;
+  }
+  if (state.vimModeHandle) {
+    state.vimModeHandle.dispose();
+    state.vimModeHandle = null;
+  }
+  if (enabled) {
+    state.vimModeHandle = state.monacoVim.initVimMode(state.editor, el.vimStatus);
+    el.vimStatus.hidden = false;
+  } else {
+    el.vimStatus.hidden = true;
+  }
+  updateVimModeButton();
+}
+
+function toggleVimMode() {
+  if (state.editorKind !== "monaco" || !state.monacoVim) {
+    showToast("Vim mode requires Monaco editor");
+    return;
+  }
+  state.session.vimMode = !state.session.vimMode;
+  applyVimMode(state.session.vimMode);
+  persistSession();
+}
+
+function updateVimModeButton() {
+  if (!el.vimModeButton) return;
+  const enabled = state.session.vimMode && state.editorKind === "monaco";
+  const unavailable = state.editorKind !== "monaco" || !state.monacoVim;
+  el.vimModeButton.classList.toggle("active", enabled);
+  el.vimModeButton.disabled = unavailable;
+  const label = enabled ? "Vim mode on" : "Vim mode off";
+  el.vimModeButton.title = label;
+  el.vimModeButton.setAttribute("aria-label", label);
 }
 
 function applySidebarState() {
