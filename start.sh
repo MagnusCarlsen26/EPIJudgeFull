@@ -73,6 +73,14 @@ fi
 if [[ ! -f "$ROOT_DIR/frontend/public/data/manifest.json" ]]; then
   echo "Building frontend data..."
   (cd "$ROOT_DIR/frontend" && npm run build)
+elif ! node -e "const m=require('$ROOT_DIR/frontend/public/data/manifest.json'); process.exit(m.problemCards ? 0 : 1)"; then
+  if [[ -f "$ROOT_DIR/../AlgorithmChallengs/data/epi_problem_cards.json" ]]; then
+    echo "Syncing problem card data..."
+    (cd "$ROOT_DIR/frontend" && npm run build:data)
+  else
+    echo "Warning: manifest.json has no problemCards and AlgorithmChallengs data was not found." >&2
+    echo "Problem descriptions will be unavailable until you run: cd frontend && npm run build:data" >&2
+  fi
 fi
 
 echo "Starting backend..."

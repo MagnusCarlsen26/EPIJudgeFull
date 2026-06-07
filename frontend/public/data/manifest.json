@@ -4345,5 +4345,8 @@
     "longest_subarray_with_sum_constraint": "/data/solutions/python/longest_subarray_with_sum_constraint.1bd08e7dd4f0.py",
     "road_network": "/data/solutions/python/road_network.446c5f49dbf8.py",
     "arbitrage": "/data/solutions/python/arbitrage.612e46c212d8.py"
-  }
+  },
+  "problemCards": "/data/epi_problem_cards.bcec5c9a5635.json",
+  "figuresBase": "/data/figures",
+  "problemCardsStable": "/data/epi_problem_cards.json"
 }

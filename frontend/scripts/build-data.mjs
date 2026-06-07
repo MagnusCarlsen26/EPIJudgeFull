@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
 
 const repoRoot = new URL("../../", import.meta.url);
@@ -25,7 +25,23 @@ const languageConfigs = {
   },
 };
 
-rmSync(dataDir, { recursive: true, force: true });
+const previousManifestPath = new URL("manifest.json", dataDir);
+let previousProblemCards = null;
+if (existsSync(previousManifestPath)) {
+  try {
+    const previous = JSON.parse(readFileSync(previousManifestPath, "utf8"));
+    if (previous.problemCards) {
+      previousProblemCards = {
+        problemCards: previous.problemCards,
+        figuresBase: previous.figuresBase || "/data/figures",
+      };
+    }
+  } catch {
+    // Keep building even if the previous manifest cannot be parsed.
+  }
+}
+
+resetGeneratedData();
 
 const mapping = parseProblemMapping(readFile("problem_mapping.js"));
 const chapters = [];
@@ -129,7 +145,57 @@ const manifest = {
   solutions,
   solutionsByProblem,
 };
+
+const algorithmChallengsDir = new URL("../AlgorithmChallengs/", repoRoot);
+const cardsSource = new URL("data/epi_problem_cards.json", algorithmChallengsDir);
+const figuresSource = new URL("data/figures/", algorithmChallengsDir);
+
+if (existsSync(cardsSource)) {
+  syncProblemCards(readFileSync(cardsSource, "utf8"));
+} else if (previousProblemCards) {
+  manifest.problemCards = previousProblemCards.problemCards;
+  manifest.figuresBase = previousProblemCards.figuresBase;
+  console.warn(
+    "AlgorithmChallengs data not found; keeping existing problem cards from the previous manifest.",
+  );
+} else if (existsSync(new URL("epi_problem_cards.json", dataDir))) {
+  manifest.problemCards = "/data/epi_problem_cards.json";
+  manifest.figuresBase = "/data/figures";
+} else {
+  console.warn(
+    "AlgorithmChallengs data not found at ../AlgorithmChallengs/data/epi_problem_cards.json; skipping problem cards sync.",
+  );
+}
+
 writeFileSync(new URL("manifest.json", dataDir), `${JSON.stringify(manifest, null, 2)}\n`);
+
+function resetGeneratedData() {
+  mkdirSync(dataDir, { recursive: true });
+  for (const dir of ["boilerplate", "solutions"]) {
+    rmSync(new URL(`${dir}/`, dataDir), { recursive: true, force: true });
+  }
+  for (const name of readdirSync(dataDir)) {
+    if (
+      (name.startsWith("problems.") && name.endsWith(".json")) ||
+      name === "manifest.json"
+    ) {
+      unlinkSync(new URL(name, dataDir));
+    }
+  }
+}
+
+function syncProblemCards(cardsJson) {
+  const hashedPath = `/data/epi_problem_cards.${hash(cardsJson)}.json`;
+  writeFileSync(new URL(hashedPath.replace("/data/", ""), dataDir), cardsJson);
+  writeFileSync(new URL("epi_problem_cards.json", dataDir), cardsJson);
+  manifest.problemCards = hashedPath;
+  manifest.problemCardsStable = "/data/epi_problem_cards.json";
+  manifest.figuresBase = "/data/figures";
+  if (existsSync(figuresSource)) {
+    rmSync(new URL("figures/", dataDir), { recursive: true, force: true });
+    cpSync(figuresSource, new URL("figures/", dataDir), { recursive: true });
+  }
+}
 
 function readFile(path) {
   try {

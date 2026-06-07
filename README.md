@@ -31,6 +31,18 @@ Open `http://localhost:5173`. The committed frontend config points at the local
 backend on `http://localhost:8000`, and `backend/.env` points at Judge0 on
 `http://localhost:2358`.
 
+After updating problem card data in the sibling
+[`AlgorithmChallengs`](../AlgorithmChallengs) repo, regenerate synced frontend
+assets:
+
+```bash
+cd frontend
+npm run build:data
+```
+
+This copies `epi_problem_cards.json` and `data/figures/` into
+`frontend/public/data/` and updates `manifest.json`.
+
 Useful checks:
 
 ```bash
